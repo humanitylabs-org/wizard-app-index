@@ -1,0 +1,311 @@
+// Wizard App Index: discovery for Wizard apps. It is a cache, not the source of truth:
+// every listing is re-derived from the app's own repo at a pinned commit, so the whole
+// database can be dropped and rebuilt. Publishing only *notifies* the index; nothing in a
+// publish request is trusted, the index always reads the repo itself.
+import { check, passed, failures } from "./checker.js";
+import { parseRepo, resolveCommit, fileReader, searchTopic } from "./github.js";
+
+const TOPICS = ["wizard-app", "wizard-ai"]; // wizard-ai only during the transition
+const RECHECK_AFTER = 7 * 24 * 3600; // re-verify listings weekly
+const PUBLISH_COOLDOWN = 60; // seconds; same repo+commit
+const QUEUE_BATCH = 25; // repo checks per cron run (each is ~4 subrequests)
+const SWEEP_START = Date.UTC(2026, 8, 1) / 1000; // the wizard-app topic did not exist before this
+
+const json = (data, status = 200, extra = {}) =>
+  new Response(JSON.stringify(data, null, 2) + "\n", {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": status === 200 ? "public, max-age=30" : "no-store", ...extra },
+  });
+const now = () => Math.floor(Date.now() / 1000);
+const parseJSON = (s, d) => {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return d;
+  }
+};
+
+function row2app(r, full = false) {
+  const a = {
+    repo: `${r.owner}/${r.repo}`,
+    publisher: r.owner,
+    publisher_npub: r.publisher_npub || null,
+    id: r.app_id,
+    name: r.name,
+    summary: r.summary,
+    type: r.type,
+    version: r.version,
+    provides: parseJSON(r.provides, []),
+    architectures: parseJSON(r.architectures, []),
+    install: { git: r.repo_url, commit: r.commit_sha },
+    checked_at: r.checked_at,
+  };
+  if (full) {
+    Object.assign(a, { license: r.license, uses: parseJSON(r.uses, []), needs: parseJSON(r.needs, []), ref: r.ref, found_via: r.found_via, first_seen: r.first_seen, listed: Boolean(r.listed), manifest: parseJSON(r.manifest, {}) });
+  }
+  return a;
+}
+
+// Check one repo at its current commit and write the result. Returns a publish report.
+export async function indexRepo(env, r, { via, ref } = {}) {
+  const c = await resolveCommit(r, ref);
+  const t = now();
+  if (c.error) {
+    await env.DB.batch([
+      env.DB.prepare("INSERT OR REPLACE INTO checks (key, commit_sha, ok, failures, checked_at) VALUES (?, NULL, 0, ?, ?)").bind(r.key, JSON.stringify([c.error]), t),
+      env.DB.prepare("UPDATE apps SET listed = 0, checked_at = ? WHERE key = ?").bind(t, r.key),
+      env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key),
+      env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(r.key),
+    ]);
+    return { repo: `${r.owner}/${r.repo}`, listed: false, failures: [c.error] };
+  }
+  const res = await check(fileReader(r, c.sha));
+  const ok = passed(res.results);
+  const fails = failures(res.results);
+  const stmts = [env.DB.prepare("INSERT OR REPLACE INTO checks (key, commit_sha, ok, failures, checked_at) VALUES (?, ?, ?, ?, ?)").bind(r.key, c.sha, ok ? 1 : 0, JSON.stringify(fails), t)];
+  if (!ok) {
+    // A failing new commit delists the repo; the last passing record stays for history.
+    stmts.push(env.DB.prepare("UPDATE apps SET listed = 0, checked_at = ? WHERE key = ?").bind(t, r.key));
+    stmts.push(env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key));
+    stmts.push(env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(r.key));
+    await env.DB.batch(stmts);
+    return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: false, failures: fails, results: res.results };
+  }
+  const d = res.data;
+  const provides = Array.isArray(d.provides) ? d.provides.map(String) : [];
+  const archs = Array.isArray(res.config?.supported_architectures) ? res.config.supported_architectures : [];
+  stmts.push(
+    env.DB.prepare(
+      `INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, ref, app_id, name, summary, type, version, license, publisher_npub, provides, uses, needs, architectures, manifest, found_via, first_seen, checked_at, listed)
+       VALUES (?, 'github', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT(key) DO UPDATE SET owner=excluded.owner, repo=excluded.repo, repo_url=excluded.repo_url, commit_sha=excluded.commit_sha, ref=excluded.ref,
+         app_id=excluded.app_id, name=excluded.name, summary=excluded.summary, type=excluded.type, version=excluded.version, license=excluded.license,
+         publisher_npub=excluded.publisher_npub, provides=excluded.provides, uses=excluded.uses, needs=excluded.needs, architectures=excluded.architectures,
+         manifest=excluded.manifest, checked_at=excluded.checked_at, listed=1`
+    ).bind(
+      r.key, r.owner, r.repo, r.url, c.sha, c.ref, String(d.id), String(d.name ?? d.id), String(d.summary), String(d.type), String(d.version),
+      d.license ? String(d.license) : null, d.publisher ? String(d.publisher) : null, JSON.stringify(provides), JSON.stringify(d.uses ?? []),
+      JSON.stringify(d.needs ?? []), JSON.stringify(archs), JSON.stringify(d), via, t, t
+    ),
+    env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key),
+    env.DB.prepare("INSERT INTO apps_fts (key, name, summary, body, provides, owner) VALUES (?, ?, ?, ?, ?, ?)").bind(
+      r.key, String(d.name ?? d.id), String(d.summary), String(res.body ?? "").slice(0, 8000), provides.join(" "), r.owner
+    ),
+    env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(r.key),
+    ...provides.map((p) => env.DB.prepare("INSERT OR IGNORE INTO app_slots (key, slot) VALUES (?, ?)").bind(r.key, p)),
+    env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(r.key)
+  );
+  await env.DB.batch(stmts);
+  return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: true, id: d.id, version: String(d.version), failures: [] };
+}
+
+function ftsQuery(q) {
+  const terms = String(q).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  return terms.slice(0, 8).map((t) => `"${t}"*`).join(" ");
+}
+
+async function search(env, url) {
+  const p = url.searchParams;
+  const limit = Math.min(Math.max(parseInt(p.get("limit") || "20", 10) || 20, 1), 50);
+  const offset = Math.min(Math.max(parseInt(p.get("offset") || "0", 10) || 0, 0), 10000);
+  const where = ["a.listed = 1"];
+  const binds = [];
+  let from = "apps a";
+  let order = "a.name COLLATE NOCASE";
+  const q = ftsQuery(p.get("q") || "");
+  if (q) {
+    from = "apps_fts f JOIN apps a ON a.key = f.key";
+    where.push("apps_fts MATCH ?");
+    binds.push(q);
+    order = "bm25(apps_fts, 0, 10.0, 5.0, 1.0, 4.0, 2.0)";
+  }
+  if (p.get("slot")) {
+    where.push("a.key IN (SELECT key FROM app_slots WHERE slot = ?)");
+    binds.push(p.get("slot"));
+  }
+  if (p.get("type")) {
+    where.push("a.type = ?");
+    binds.push(p.get("type"));
+  }
+  if (p.get("publisher")) {
+    where.push("a.owner = ? COLLATE NOCASE");
+    binds.push(p.get("publisher"));
+  }
+  if (p.get("arch")) {
+    where.push("(a.architectures = '[]' OR EXISTS (SELECT 1 FROM json_each(a.architectures) WHERE value = ?))");
+    binds.push(p.get("arch"));
+  }
+  const sql = `SELECT a.* FROM ${from} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ? OFFSET ?`;
+  const { results } = await env.DB.prepare(sql).bind(...binds, limit + 1, offset).all();
+  const more = results.length > limit;
+  return json({ apps: results.slice(0, limit).map((r) => row2app(r)), next_offset: more ? offset + limit : null });
+}
+
+async function publish(env, request) {
+  let body = {};
+  const ct = request.headers.get("content-type") || "";
+  if (ct.includes("json")) body = await request.json().catch(() => ({}));
+  else if (ct.includes("form")) body = Object.fromEntries(await request.formData());
+  // Plain {repo}, or a GitHub webhook payload (push / repository events). The payload is only a hint.
+  const input = body.repo || body.repository?.full_name || body.repository?.html_url;
+  const r = parseRepo(input);
+  if (!r) return json({ error: "send {\"repo\": \"owner/name\"} for a public GitHub repo" }, 400);
+  const ref = typeof body.ref === "string" && !body.repository ? body.ref.replace(/^refs\/heads\//, "") : undefined;
+  if (request.headers.get("x-github-event") === "ping") return json({ ok: true, repo: `${r.owner}/${r.repo}`, note: "webhook connected; push to publish" });
+  const last = await env.DB.prepare("SELECT c.commit_sha, c.ok, c.failures, c.checked_at FROM checks c WHERE c.key = ?").bind(r.key).first();
+  if (last && now() - last.checked_at < PUBLISH_COOLDOWN && !ref) {
+    const c = await resolveCommit(r);
+    if (c.sha && c.sha === last.commit_sha) {
+      return json({ repo: `${r.owner}/${r.repo}`, commit: last.commit_sha, listed: Boolean(last.ok), failures: parseJSON(last.failures, []), cached: true });
+    }
+  }
+  const report = await indexRepo(env, r, { via: "publish", ref });
+  return json(report, report.listed ? 200 : 422);
+}
+
+async function getApp(env, owner, repo) {
+  const r = parseRepo(`${owner}/${repo}`);
+  if (!r) return json({ error: "bad repo" }, 400);
+  const row = await env.DB.prepare("SELECT * FROM apps WHERE key = ?").bind(r.key).first();
+  const chk = await env.DB.prepare("SELECT commit_sha, ok, failures, checked_at FROM checks WHERE key = ?").bind(r.key).first();
+  if (!row && !chk) return json({ error: "not indexed; POST /v1/publish to add it" }, 404);
+  return json({ ...(row ? row2app(row, true) : { repo: `${r.owner}/${r.repo}`, listed: false }), last_check: chk ? { commit: chk.commit_sha, ok: Boolean(chk.ok), failures: parseJSON(chk.failures, []), checked_at: chk.checked_at } : null });
+}
+
+async function stats(env) {
+  const a = await env.DB.prepare("SELECT COUNT(*) AS listed FROM apps WHERE listed = 1").first();
+  const q = await env.DB.prepare("SELECT COUNT(*) AS queued FROM queue").first();
+  const s = await env.DB.prepare("SELECT name, value FROM crawl_state").all();
+  return json({ listed: a.listed, queued: q.queued, crawl: Object.fromEntries(s.results.map((x) => [x.name, x.value])) });
+}
+
+// ---------------------------------------------------------------- crawler (fallback discovery)
+
+const day = (s) => new Date(s * 1000).toISOString().slice(0, 10);
+
+async function enqueue(env, names, reason) {
+  const t = now();
+  const stmts = [];
+  for (const full of names) {
+    const r = parseRepo(full);
+    if (r) stmts.push(env.DB.prepare("INSERT OR IGNORE INTO queue (key, full, reason, added_at) VALUES (?, ?, ?, ?)").bind(r.key, `${r.owner}/${r.repo}`, reason, t));
+  }
+  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+  return stmts.length;
+}
+
+// Collect every repo in a query, splitting the created-date window when a slice exceeds
+// GitHub search's 1,000-result cap. Budget-limited; returns {names, done}.
+async function sliceSearch(topic, from, to, budget, token) {
+  const names = [];
+  const stack = [[from, to]];
+  while (stack.length && budget.calls > 0) {
+    const [a, b] = stack.pop();
+    const q = `topic:${topic} fork:true created:${day(a)}..${day(b)}`;
+    budget.calls--;
+    const first = await searchTopic(q, 1, token);
+    if (first.rateLimited) return { names, done: false, rateLimited: true };
+    if (first.error) return { names, done: false, error: first.error };
+    if (first.total > 1000 && b - a > 86400) {
+      const mid = a + Math.floor((b - a) / 2 / 86400) * 86400;
+      stack.push([mid + 86400, b], [a, mid]);
+      continue;
+    }
+    names.push(...first.items.filter((i) => !i.archived && !i.private).map((i) => i.full_name));
+    for (let page = 2; page <= Math.min(10, Math.ceil(first.total / 100)) && budget.calls > 0; page++) {
+      budget.calls--;
+      const r = await searchTopic(q, page, token);
+      if (r.rateLimited || r.error) return { names, done: false, rateLimited: r.rateLimited };
+      names.push(...r.items.filter((i) => !i.archived && !i.private).map((i) => i.full_name));
+    }
+  }
+  return { names, done: stack.length === 0 };
+}
+
+async function crawl(env) {
+  const token = env.GITHUB_TOKEN || null;
+  const budget = { calls: token ? 25 : 8 };
+  const t = now();
+  const state = Object.fromEntries((await env.DB.prepare("SELECT name, value FROM crawl_state").all()).results.map((x) => [x.name, x.value]));
+  const set = (k, v) => env.DB.prepare("INSERT OR REPLACE INTO crawl_state (name, value) VALUES (?, ?)").bind(k, String(v));
+  const writes = [];
+  let found = 0;
+  // 1) Recently pushed repos carrying a topic (fast path for updates).
+  for (const topic of TOPICS) {
+    const since = Number(state[`pushed:${topic}`] || SWEEP_START);
+    const q = `topic:${topic} fork:true pushed:>=${new Date((since - 3600) * 1000).toISOString().slice(0, 19)}Z`;
+    if (budget.calls <= 0) break;
+    budget.calls--;
+    const r = await searchTopic(q, 1, token);
+    if (r.rateLimited || r.error) break;
+    found += await enqueue(env, r.items.filter((i) => !i.archived && !i.private).map((i) => i.full_name), "crawl:pushed");
+    if (r.total <= 100) writes.push(set(`pushed:${topic}`, t));
+  }
+  // 2) Full sweep in created-date slices (catches repos tagged without a new push). Restarts when complete.
+  for (const topic of TOPICS) {
+    if (budget.calls <= 0) break;
+    const cursor = Number(state[`sweep:${topic}`] || SWEEP_START);
+    const end = Math.min(cursor + 30 * 86400, t);
+    const res = await sliceSearch(topic, cursor, end, budget, token);
+    found += await enqueue(env, res.names, "crawl:sweep");
+    if (res.done) writes.push(set(`sweep:${topic}`, end >= t ? SWEEP_START : end + 86400));
+  }
+  // 3) Stale listings get re-verified so deleted or broken repos drop out.
+  const stale = await env.DB.prepare("SELECT owner, repo FROM apps WHERE listed = 1 AND checked_at < ? ORDER BY checked_at LIMIT 50").bind(t - RECHECK_AFTER).all();
+  found += await enqueue(env, stale.results.map((x) => `${x.owner}/${x.repo}`), "recheck");
+  writes.push(set("last_crawl", t), set("last_crawl_found", found));
+  if (writes.length) await env.DB.batch(writes);
+  // 4) Work the queue.
+  const batch = await env.DB.prepare("SELECT key, full, reason FROM queue ORDER BY added_at LIMIT ?").bind(QUEUE_BATCH).all();
+  let listed = 0;
+  for (const item of batch.results) {
+    const full = item.full;
+    const r = parseRepo(full);
+    await env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(item.key).run();
+    if (!r) continue;
+    const known = await env.DB.prepare("SELECT checked_at FROM checks WHERE key = ?").bind(r.key).first();
+    if (item.reason !== "recheck" && known && t - known.checked_at < 3600) continue; // checked recently
+    try {
+      const rep = await indexRepo(env, r, { via: "crawl" });
+      if (rep.listed) listed++;
+    } catch (e) {
+      console.log("index failed", full, String(e));
+    }
+  }
+  return { found, processed: batch.results.length, listed };
+}
+
+const HOME = `Wizard App Index — find Wizard apps. The app repos are the source of truth; this index can be rebuilt from them.
+
+GET  /v1/search?q=video&slot=&type=&publisher=&arch=amd64&limit=20&offset=0
+GET  /v1/apps/{owner}/{repo}        full record + last check result (also shows why a repo is not listed)
+POST /v1/publish {"repo":"owner/name"}   check the repo now and list it if its wizard.md passes
+     (also accepts a GitHub webhook: Payload URL https://apps.humanitylabs.org/v1/publish, content type JSON, push events)
+GET  /v1/stats
+
+Publish: add wizard.md (spec: humanitylabs-org/wizard-os spec/WIZARD_MD.md) at the repo root, make the repo public,
+tag it with the topic wizard-app, then POST /v1/publish or wait for the crawler. Installs pin to the checked commit.
+`;
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    if (request.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type" } });
+    try {
+      if (path === "/" && request.method === "GET") return new Response(HOME, { headers: { "content-type": "text/plain; charset=utf-8" } });
+      if (path === "/v1/search" && request.method === "GET") return await search(env, url);
+      if (path === "/v1/stats" && request.method === "GET") return await stats(env);
+      if (path === "/v1/publish" && request.method === "POST") return await publish(env, request);
+      const m = /^\/v1\/apps\/([^/]+)\/([^/]+)$/.exec(path);
+      if (m && request.method === "GET") return await getApp(env, decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+      return json({ error: "not found" }, 404);
+    } catch (e) {
+      console.log("error", String(e?.stack || e));
+      return json({ error: "internal error" }, 500);
+    }
+  },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(crawl(env).then((r) => console.log("crawl", JSON.stringify(r))));
+  },
+};

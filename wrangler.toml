@@ -1,0 +1,17 @@
+name = "wizard-app-index"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+routes = [{ pattern = "apps.humanitylabs.org", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wizard-app-index"
+database_id = "2e92e8fd-b40d-4d4c-9fd5-0c5ff68f5e58"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[observability]
+enabled = true

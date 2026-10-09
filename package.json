@@ -1,0 +1,12 @@
+{
+  "name": "wizard-app-index",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply wizard-app-index --remote"
+  },
+  "dependencies": { "yaml": "^2.8.1" },
+  "devDependencies": { "wrangler": "^4.149.0" }
+}
