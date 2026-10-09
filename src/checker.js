@@ -4,6 +4,7 @@
 import { parse as parseYaml, parseAllDocuments } from "yaml";
 
 export const TYPES = new Set(["agent", "service", "view", "external"]);
+export const CATEGORIES = new Set(["agent", "interface", "app", "system"]);
 export const NEEDS = new Set(["mic", "system-audio", "camera", "notifications", "files"]);
 const SPECS = new Set([0.1, 0.2]);
 const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
@@ -129,12 +130,21 @@ export async function check(read) {
     const badp = (Array.isArray(pv) ? pv : [pv]).filter((p) => !ID.test(String(p)));
     rule("provides are slot ids", Array.isArray(pv) && badp.length === 0, badp.join(", "));
   }
+  if (d.category != null) rule("category is agent, interface, app or system", CATEGORIES.has(d.category), d.category);
   if (d.publisher != null) rule("publisher is an npub", NPUB.test(String(d.publisher)), d.publisher);
   if (files.compose != null) {
     const risks = composeRisks(files.compose);
     rule("container asks for no host-level access", risks.length === 0, risks.join("; "));
   }
-  return { results: out, data: d, config, body: body(text) };
+  // Store logo: Runtipi's metadata/logo.jpg next to config.json, if the repo has one.
+  let logo = null;
+  if (rt.config) {
+    const dir = String(rt.config).includes("/") ? String(rt.config).replace(/\/[^/]*$/, "") : "";
+    for (const cand of [dir ? `${dir}/metadata/logo.jpg` : "metadata/logo.jpg", "metadata/logo.jpg", "logo.jpg"]) {
+      if ((await read(cand)) != null) { logo = cand; break; }
+    }
+  }
+  return { results: out, data: d, config, body: body(text), logo };
 }
 
 export const passed = (results) => results.length > 0 && results.every((r) => r.ok);

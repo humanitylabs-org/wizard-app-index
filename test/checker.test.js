@@ -93,3 +93,9 @@ test("ref advertisement parsing", () => {
   assert.equal(r.symref, "refs/heads/main");
   assert.equal(r.refs["refs/tags/v1"], sha2);
 });
+
+test("category is optional and limited to the four shelves", async () => {
+  const withCat = (c) => ({ ...base, "wizard.md": base["wizard.md"].replace("type: service\n", `type: service\ncategory: ${c}\n`) });
+  assert.ok(passed((await check(memReader(withCat("system")))).results));
+  assert.match(failures((await check(memReader(withCat("games")))).results).join(), /category/);
+});

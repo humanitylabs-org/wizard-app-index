@@ -4,6 +4,7 @@
 // publish request is trusted, the index always reads the repo itself.
 import { check, passed, failures } from "./checker.js";
 import { parseRepo, resolveCommit, fileReader, searchTopic } from "./github.js";
+import { storePage } from "./page.js";
 
 const TOPICS = ["wizard-app", "wizard-ai"]; // wizard-ai only during the transition
 const RECHECK_AFTER = 7 * 24 * 3600; // re-verify listings weekly
@@ -34,7 +35,10 @@ function row2app(r, full = false) {
     name: r.name,
     summary: r.summary,
     type: r.type,
+    category: r.category,
     version: r.version,
+    logo: r.logo ? `https://raw.githubusercontent.com/${r.owner}/${r.repo}/${r.commit_sha}/${r.logo}` : null,
+    url: r.repo_url,
     provides: parseJSON(r.provides, []),
     architectures: parseJSON(r.architectures, []),
     install: { git: r.repo_url, commit: r.commit_sha },
@@ -47,6 +51,8 @@ function row2app(r, full = false) {
 }
 
 // Check one repo at its current commit and write the result. Returns a publish report.
+export const categoryOf = (d) => (["agent", "interface", "app", "system"].includes(d.category) ? d.category : d.type === "agent" ? "agent" : "app");
+
 export async function indexRepo(env, r, { via, ref } = {}) {
   const c = await resolveCommit(r, ref);
   const t = now();
@@ -76,16 +82,16 @@ export async function indexRepo(env, r, { via, ref } = {}) {
   const archs = Array.isArray(res.config?.supported_architectures) ? res.config.supported_architectures : [];
   stmts.push(
     env.DB.prepare(
-      `INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, ref, app_id, name, summary, type, version, license, publisher_npub, provides, uses, needs, architectures, manifest, found_via, first_seen, checked_at, listed)
-       VALUES (?, 'github', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, ref, app_id, name, summary, type, version, license, publisher_npub, provides, uses, needs, architectures, manifest, found_via, first_seen, checked_at, listed, category, logo)
+       VALUES (?, 'github', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
        ON CONFLICT(key) DO UPDATE SET owner=excluded.owner, repo=excluded.repo, repo_url=excluded.repo_url, commit_sha=excluded.commit_sha, ref=excluded.ref,
          app_id=excluded.app_id, name=excluded.name, summary=excluded.summary, type=excluded.type, version=excluded.version, license=excluded.license,
          publisher_npub=excluded.publisher_npub, provides=excluded.provides, uses=excluded.uses, needs=excluded.needs, architectures=excluded.architectures,
-         manifest=excluded.manifest, checked_at=excluded.checked_at, listed=1`
+         manifest=excluded.manifest, checked_at=excluded.checked_at, listed=1, category=excluded.category, logo=excluded.logo`
     ).bind(
       r.key, r.owner, r.repo, r.url, c.sha, c.ref, String(d.id), String(d.name ?? d.id), String(d.summary), String(d.type), String(d.version),
       d.license ? String(d.license) : null, d.publisher ? String(d.publisher) : null, JSON.stringify(provides), JSON.stringify(d.uses ?? []),
-      JSON.stringify(d.needs ?? []), JSON.stringify(archs), JSON.stringify(d), via, t, t
+      JSON.stringify(d.needs ?? []), JSON.stringify(archs), JSON.stringify(d), via, t, t, categoryOf(d), res.logo
     ),
     env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key),
     env.DB.prepare("INSERT INTO apps_fts (key, name, summary, body, provides, owner) VALUES (?, ?, ?, ?, ?, ?)").bind(
@@ -122,6 +128,10 @@ async function search(env, url) {
   if (p.get("slot")) {
     where.push("a.key IN (SELECT key FROM app_slots WHERE slot = ?)");
     binds.push(p.get("slot"));
+  }
+  if (p.get("category")) {
+    where.push("a.category = ?");
+    binds.push(p.get("category"));
   }
   if (p.get("type")) {
     where.push("a.type = ?");
@@ -293,6 +303,13 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (request.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type" } });
     try {
+      if ((path === "/wizard-apps" || path === "/store") && request.method === "GET") {
+        const { results } = await env.DB.prepare("SELECT * FROM apps WHERE listed = 1 ORDER BY name COLLATE NOCASE").all();
+        return new Response(storePage(results.map((r) => row2app(r))), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60",
+            "content-security-policy": "default-src 'none'; img-src 'self' https://raw.githubusercontent.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" },
+        });
+      }
       if (path === "/" && request.method === "GET") return new Response(HOME, { headers: { "content-type": "text/plain; charset=utf-8" } });
       if (path === "/v1/search" && request.method === "GET") return await search(env, url);
       if (path === "/v1/stats" && request.method === "GET") return await stats(env);
