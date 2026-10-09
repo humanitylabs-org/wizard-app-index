@@ -3,7 +3,7 @@
 // raw.githubusercontent.com at the pinned commit, so neither touches the REST API rate limit.
 // Only the crawler's topic search uses the REST API (optional GITHUB_TOKEN raises its limit).
 
-const UA = "wizard-app-index (+https://apps.humanitylabs.org)";
+const UA = "wizard-app-index (+https://apps.aiwizards.com)";
 const MAX_FILE = 512 * 1024;
 const NAME = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
 

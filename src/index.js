@@ -280,7 +280,7 @@ const HOME = `Wizard App Index — find Wizard apps. The app repos are the sourc
 GET  /v1/search?q=video&slot=&type=&publisher=&arch=amd64&limit=20&offset=0
 GET  /v1/apps/{owner}/{repo}        full record + last check result (also shows why a repo is not listed)
 POST /v1/publish {"repo":"owner/name"}   check the repo now and list it if its wizard.md passes
-     (also accepts a GitHub webhook: Payload URL https://apps.humanitylabs.org/v1/publish, content type JSON, push events)
+     (also accepts a GitHub webhook: Payload URL https://apps.aiwizards.com/v1/publish, content type JSON, push events)
 GET  /v1/stats
 
 Publish: add wizard.md (spec: humanitylabs-org/wizard-os spec/WIZARD_MD.md) at the repo root, make the repo public,

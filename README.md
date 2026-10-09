@@ -1,6 +1,6 @@
 # Wizard App Index
 
-Discovery for Wizard apps, live at https://apps.humanitylabs.org (Cloudflare Worker + D1, Humanity Labs account).
+Discovery for Wizard apps, live at https://apps.aiwizards.com (Cloudflare Worker + D1, Humanity Labs account).
 
 The app repos are the source of truth. The index is a cache: every listing is re-read from the app's own repo at a pinned commit, so the database can be dropped and rebuilt.
 

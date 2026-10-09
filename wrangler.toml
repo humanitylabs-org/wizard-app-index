@@ -2,7 +2,7 @@ name = "wizard-app-index"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
-routes = [{ pattern = "apps.humanitylabs.org", custom_domain = true }]
+routes = [{ pattern = "apps.aiwizards.com", custom_domain = true }]
 
 [[d1_databases]]
 binding = "DB"
