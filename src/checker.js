@@ -138,7 +138,13 @@ export async function check(read) {
   }
   // Store logo: Runtipi's metadata/logo.jpg next to config.json, if the repo has one.
   let logo = null;
-  if (rt.config) {
+  if (d.icon != null) {
+    const ip = String(d.icon);
+    const ok = /\.(png|jpe?g)$/i.test(ip) && (await read(ip)) != null;
+    rule("icon exists (png/jpg)", ok, ip);
+    if (ok) logo = ip;
+  }
+  if (!logo && rt.config) {
     const dir = String(rt.config).includes("/") ? String(rt.config).replace(/\/[^/]*$/, "") : "";
     for (const cand of [dir ? `${dir}/metadata/logo.jpg` : "metadata/logo.jpg", "metadata/logo.jpg", "logo.jpg"]) {
       if ((await read(cand)) != null) { logo = cand; break; }

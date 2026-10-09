@@ -99,3 +99,12 @@ test("category is optional and limited to the four shelves", async () => {
   assert.ok(passed((await check(memReader(withCat("system")))).results));
   assert.match(failures((await check(memReader(withCat("games")))).results).join(), /category/);
 });
+
+test("icon is optional; when set it must exist and be png/jpg", async () => {
+  const withIcon = (i, files = {}) => ({ ...base, ...files, "wizard.md": base["wizard.md"].replace("type: service\n", `type: service\nicon: ${i}\n`) });
+  const ok = await check(memReader(withIcon("icon.png", { "icon.png": "x" })));
+  assert.ok(passed(ok.results), failures(ok.results).join());
+  assert.equal(ok.logo, "icon.png");
+  assert.match(failures((await check(memReader(withIcon("icon.png")))).results).join(), /icon/);
+  assert.match(failures((await check(memReader(withIcon("icon.svg", { "icon.svg": "x" })))).results).join(), /icon/);
+});
