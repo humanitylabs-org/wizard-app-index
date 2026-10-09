@@ -5,8 +5,8 @@ workers_dev = true
 routes = [
   { pattern = "apps.aiwizards.com", custom_domain = true },
   # Public store page on the main site; only this path, everything else stays with aiwizards-frontend.
-  { pattern = "www.aiwizards.com/wizard-apps", zone_name = "aiwizards.com" },
-  { pattern = "www.aiwizards.com/wizard-apps/*", zone_name = "aiwizards.com" },
+  # "wizard-apps*" also matches query strings (?utm=...) and sub-paths.
+  { pattern = "www.aiwizards.com/wizard-apps*", zone_name = "aiwizards.com" },
 ]
 
 [[d1_databases]]

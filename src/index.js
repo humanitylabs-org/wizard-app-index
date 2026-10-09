@@ -303,7 +303,7 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (request.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type" } });
     try {
-      if ((path === "/wizard-apps" || path === "/store") && request.method === "GET") {
+      if ((path === "/wizard-apps" || path === "/store") && (request.method === "GET" || request.method === "HEAD")) {
         const { results } = await env.DB.prepare("SELECT * FROM apps WHERE listed = 1 ORDER BY name COLLATE NOCASE").all();
         return new Response(storePage(results.map((r) => row2app(r))), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60",
