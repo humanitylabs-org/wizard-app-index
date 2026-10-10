@@ -114,11 +114,12 @@ header .wrap{display:flex;align-items:center;height:52px}
 background:linear-gradient(120deg,#fff 30%,var(--violet-2) 70%,var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero p{color:var(--ink-2);font-size:16px;line-height:1.5;margin:0;max-width:560px}
 .gsub{margin:-6px 4px 14px;font-size:13px;color:var(--ink-3)}
-.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:14px 2px 0;font-size:12px;color:var(--ink-3)}
-.lg-pair{display:inline-flex;align-items:center;gap:6px;position:relative}
+.legend{display:flex;flex-direction:column;gap:6px;margin:14px 2px 0;font-size:12px;color:var(--ink-3)}
+.lg{display:flex;align-items:center;gap:8px}
+.lg-pair{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;position:relative}
 .lg-pair i{width:14px;height:14px;border-radius:5px;background:linear-gradient(145deg,#6b46ff,#c04dff)}
-.lg-pair::after{content:"";position:absolute;left:12px;right:12px;top:6px;height:2px;background:linear-gradient(90deg,var(--violet-2),var(--cyan))}
-.lg-dash{display:inline-block;width:14px;height:14px;border-radius:5px;margin-left:10px;outline:1.5px dashed rgba(205,190,255,.6);outline-offset:1px}
+.lg-pair::after{content:"";position:absolute;left:12px;right:12px;top:6px;height:2px;background:var(--cyan)}
+.lg-dash{flex:0 0 auto;display:inline-block;width:14px;height:14px;margin:0 9px 0 2px;border-radius:5px;outline:1.5px dashed rgba(205,190,255,.6);outline-offset:1px}
 .how{margin:40px 0 0;padding:20px 20px 8px;border-radius:24px;background:var(--glass);border:1px solid var(--line)}
 .how h3{margin:0 0 10px;font-size:15px;font-weight:700}
 .how h3+p,.how ol+h3{margin-top:18px}
@@ -237,7 +238,7 @@ button.pill:hover{border-color:var(--line-2);color:var(--ink)}
     <div class="chips"><button class="chip on" type="button" data-tag="">All<b>${apps.length}</b></button>${tagChips}</div>
     <div class="sort" role="group" aria-label="Sort"><button type="button" data-sort="pop" class="on">Popular</button><button type="button" data-sort="new">New</button><button type="button" data-sort="name">A-Z</button></div>
   </div>
-  <p class="legend"><span class="lg-pair"><i></i><i></i></span>Joined: an app and the screen you open it with<span class="lg-dash"></span>Dashed ring: runs in the background, no screen of its own</p>
+  <p class="legend"><span class="lg"><span class="lg-pair"><i></i><i></i></span>Joined: an app and the screen you open it with</span><span class="lg"><span class="lg-dash"></span>Dashed ring: runs in the background, no screen of its own</span></p>
   ${groups}
   <div class="rows" id="rows">${apps.map(row).join("\n")}</div>
   <p class="none" id="none">No apps match.</p>
