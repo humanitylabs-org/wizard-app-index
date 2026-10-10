@@ -42,6 +42,7 @@ function row2app(r, full = false) {
     provides: parseJSON(r.provides, []),
     architectures: parseJSON(r.architectures, []),
     install: { git: r.repo_url, commit: r.commit_sha },
+    uses: parseJSON(r.uses, []),
     checked_at: r.checked_at,
   };
   if (full) {
@@ -128,6 +129,12 @@ async function search(env, url) {
   if (p.get("slot")) {
     where.push("a.key IN (SELECT key FROM app_slots WHERE slot = ?)");
     binds.push(p.get("slot"));
+  }
+  if (p.get("id")) {
+    // Exact install name. Several publishers may use the same id; oldest listing first.
+    where.push("a.app_id = ?");
+    binds.push(p.get("id"));
+    order = "a.first_seen, a.key";
   }
   if (p.get("category")) {
     where.push("a.category = ?");
