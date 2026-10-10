@@ -115,11 +115,11 @@ background:linear-gradient(120deg,#fff 30%,var(--violet-2) 70%,var(--pink));-web
 .hero p{color:var(--ink-2);font-size:16px;line-height:1.5;margin:0;max-width:560px}
 .gsub{margin:-6px 4px 14px;font-size:13px;color:var(--ink-3)}
 .legend{display:flex;flex-direction:column;gap:6px;margin:14px 2px 0;font-size:12px;color:var(--ink-3)}
-.lg{display:flex;align-items:center;gap:8px}
-.lg-pair{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;position:relative}
+.lg{display:flex;align-items:flex-start;gap:8px;line-height:16px}
+.lg-pair{flex:0 0 34px;display:inline-flex;align-items:center;justify-content:space-between;position:relative}
 .lg-pair i{width:14px;height:14px;border-radius:5px;background:linear-gradient(145deg,#6b46ff,#c04dff)}
 .lg-pair::after{content:"";position:absolute;left:12px;right:12px;top:6px;height:2px;background:var(--cyan)}
-.lg-dash{flex:0 0 auto;display:inline-block;width:14px;height:14px;margin:0 9px 0 2px;border-radius:5px;outline:1.5px dashed rgba(205,190,255,.6);outline-offset:1px}
+.lg-dash{flex:0 0 14px;display:inline-block;width:14px;height:14px;margin:0 10px 0 10px;border-radius:5px;outline:1.5px dashed rgba(205,190,255,.6);outline-offset:1px}
 .how{margin:40px 0 0;padding:20px 20px 8px;border-radius:24px;background:var(--glass);border:1px solid var(--line)}
 .how h3{margin:0 0 10px;font-size:15px;font-weight:700}
 .how h3+p,.how ol+h3{margin-top:18px}
