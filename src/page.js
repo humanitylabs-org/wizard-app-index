@@ -14,13 +14,13 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 function card(a) {
   const initial = esc((a.name || a.id || "?").slice(0, 1).toUpperCase());
   const icon = a.logo ? `<img src="${esc(a.logo)}" alt="" loading="lazy" width="60" height="60">` : `<span class="mono">${initial}</span>`;
-  const search = `${a.name} ${a.summary} ${a.publisher} ${(a.provides || []).join(" ")}`.toLowerCase();
+  const search = `${a.name} ${a.summary} ${a.publisher} ${(a.provides || []).join(" ")} ${(a.tags || []).join(" ")}`.toLowerCase();
   return `<a class="card" href="${esc(a.url)}" rel="noopener" data-search="${esc(search)}">
   <div class="icon">${icon}</div>
   <div class="body">
     <h3>${esc(a.name)}</h3>
     <p>${esc(a.summary)}</p>
-    <div class="meta"><span>${esc(a.publisher)}</span><span>v${esc(a.version)}</span></div>
+    <div class="meta"><span>${esc(a.publisher)}</span><span>v${esc(a.version)}</span>${a.installs ? `<span>${esc(a.installs)} install${a.installs === 1 ? "" : "s"}</span>` : ""}${(a.tags || []).map((t) => `<span>${esc(t)}</span>`).join("")}</div>
   </div>
 </a>`;
 }

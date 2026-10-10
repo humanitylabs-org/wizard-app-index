@@ -2,7 +2,7 @@
 // every listing is re-derived from the app's own repo at a pinned commit, so the whole
 // database can be dropped and rebuilt. Publishing only *notifies* the index; nothing in a
 // publish request is trusted, the index always reads the repo itself.
-import { check, passed, failures } from "./checker.js";
+import { check, passed, failures, TAGS } from "./checker.js";
 import { parseRepo, resolveCommit, fileReader, searchTopic } from "./github.js";
 import { storePage } from "./page.js";
 
@@ -43,6 +43,8 @@ function row2app(r, full = false) {
     architectures: parseJSON(r.architectures, []),
     install: { git: r.repo_url, commit: r.commit_sha },
     uses: parseJSON(r.uses, []),
+    tags: parseJSON(r.tags, []),
+    installs: Number(r.installs) || 0,
     checked_at: r.checked_at,
   };
   if (full) {
@@ -50,6 +52,8 @@ function row2app(r, full = false) {
   }
   return a;
 }
+
+export const tagsOf = (d) => [...new Set((Array.isArray(d.tags) ? d.tags : []).filter((x) => TAGS.has(x)))];
 
 // Check one repo at its current commit and write the result. Returns a publish report.
 export const categoryOf = (d) => (["agent", "interface", "app", "system"].includes(d.category) ? d.category : d.type === "agent" ? "agent" : "app");
@@ -63,6 +67,7 @@ export async function indexRepo(env, r, { via, ref } = {}) {
       env.DB.prepare("UPDATE apps SET listed = 0, checked_at = ? WHERE key = ?").bind(t, r.key),
       env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key),
       env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(r.key),
+      env.DB.prepare("DELETE FROM app_tags WHERE key = ?").bind(r.key),
     ]);
     return { repo: `${r.owner}/${r.repo}`, listed: false, failures: [c.error] };
   }
@@ -75,24 +80,26 @@ export async function indexRepo(env, r, { via, ref } = {}) {
     stmts.push(env.DB.prepare("UPDATE apps SET listed = 0, checked_at = ? WHERE key = ?").bind(t, r.key));
     stmts.push(env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key));
     stmts.push(env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(r.key));
+    stmts.push(env.DB.prepare("DELETE FROM app_tags WHERE key = ?").bind(r.key));
     await env.DB.batch(stmts);
     return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: false, failures: fails, results: res.results };
   }
   const d = res.data;
   const provides = Array.isArray(d.provides) ? d.provides.map(String) : [];
+  const tags = tagsOf(d);
   const archs = Array.isArray(res.config?.supported_architectures) ? res.config.supported_architectures : [];
   stmts.push(
     env.DB.prepare(
-      `INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, ref, app_id, name, summary, type, version, license, publisher_npub, provides, uses, needs, architectures, manifest, found_via, first_seen, checked_at, listed, category, logo)
-       VALUES (?, 'github', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, ref, app_id, name, summary, type, version, license, publisher_npub, provides, uses, needs, architectures, manifest, found_via, first_seen, checked_at, listed, category, logo, tags)
+       VALUES (?, 'github', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET owner=excluded.owner, repo=excluded.repo, repo_url=excluded.repo_url, commit_sha=excluded.commit_sha, ref=excluded.ref,
          app_id=excluded.app_id, name=excluded.name, summary=excluded.summary, type=excluded.type, version=excluded.version, license=excluded.license,
          publisher_npub=excluded.publisher_npub, provides=excluded.provides, uses=excluded.uses, needs=excluded.needs, architectures=excluded.architectures,
-         manifest=excluded.manifest, checked_at=excluded.checked_at, listed=1, category=excluded.category, logo=excluded.logo`
+         manifest=excluded.manifest, checked_at=excluded.checked_at, listed=1, category=excluded.category, logo=excluded.logo, tags=excluded.tags`
     ).bind(
       r.key, r.owner, r.repo, r.url, c.sha, c.ref, String(d.id), String(d.name ?? d.id), String(d.summary), String(d.type), String(d.version),
       d.license ? String(d.license) : null, d.publisher ? String(d.publisher) : null, JSON.stringify(provides), JSON.stringify(d.uses ?? []),
-      JSON.stringify(d.needs ?? []), JSON.stringify(archs), JSON.stringify(d), via, t, t, categoryOf(d), res.logo
+      JSON.stringify(d.needs ?? []), JSON.stringify(archs), JSON.stringify(d), via, t, t, categoryOf(d), res.logo, JSON.stringify(tags)
     ),
     env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(r.key),
     env.DB.prepare("INSERT INTO apps_fts (key, name, summary, body, provides, owner) VALUES (?, ?, ?, ?, ?, ?)").bind(
@@ -100,6 +107,8 @@ export async function indexRepo(env, r, { via, ref } = {}) {
     ),
     env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(r.key),
     ...provides.map((p) => env.DB.prepare("INSERT OR IGNORE INTO app_slots (key, slot) VALUES (?, ?)").bind(r.key, p)),
+    env.DB.prepare("DELETE FROM app_tags WHERE key = ?").bind(r.key),
+    ...tags.map((g) => env.DB.prepare("INSERT OR IGNORE INTO app_tags (key, tag) VALUES (?, ?)").bind(r.key, g)),
     env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(r.key)
   );
   await env.DB.batch(stmts);
@@ -111,14 +120,17 @@ function ftsQuery(q) {
   return terms.slice(0, 8).map((t) => `"${t}"*`).join(" ");
 }
 
-async function search(env, url) {
-  const p = url.searchParams;
+const SORTS = { popular: "installs DESC, a.name COLLATE NOCASE", new: "a.first_seen DESC, a.key", name: "a.name COLLATE NOCASE" };
+const WITH_INSTALLS = "COALESCE((SELECT count FROM installs i WHERE i.key = a.key), 0) AS installs";
+
+// Pure: URLSearchParams -> {sql, binds}. Filters AND together; an explicit sort wins over bm25 / id order.
+export function buildSearch(p) {
   const limit = Math.min(Math.max(parseInt(p.get("limit") || "20", 10) || 20, 1), 50);
   const offset = Math.min(Math.max(parseInt(p.get("offset") || "0", 10) || 0, 0), 10000);
   const where = ["a.listed = 1"];
   const binds = [];
   let from = "apps a";
-  let order = "a.name COLLATE NOCASE";
+  let order = SORTS.name;
   const q = ftsQuery(p.get("q") || "");
   if (q) {
     from = "apps_fts f JOIN apps a ON a.key = f.key";
@@ -129,6 +141,10 @@ async function search(env, url) {
   if (p.get("slot")) {
     where.push("a.key IN (SELECT key FROM app_slots WHERE slot = ?)");
     binds.push(p.get("slot"));
+  }
+  if (p.get("tag")) {
+    where.push("a.key IN (SELECT key FROM app_tags WHERE tag = ?)");
+    binds.push(p.get("tag"));
   }
   if (p.get("id")) {
     // Exact install name. Several publishers may use the same id; oldest listing first.
@@ -152,11 +168,57 @@ async function search(env, url) {
     where.push("(a.architectures = '[]' OR EXISTS (SELECT 1 FROM json_each(a.architectures) WHERE value = ?))");
     binds.push(p.get("arch"));
   }
-  const sql = `SELECT a.* FROM ${from} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ? OFFSET ?`;
-  const { results } = await env.DB.prepare(sql).bind(...binds, limit + 1, offset).all();
+  if (Object.hasOwn(SORTS, p.get("sort") || "")) order = SORTS[p.get("sort")];
+  const sql = `SELECT a.*, ${WITH_INSTALLS} FROM ${from} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ? OFFSET ?`;
+  return { sql, binds: [...binds, limit + 1, offset], limit, offset };
+}
+
+async function search(env, url) {
+  const { sql, binds, limit, offset } = buildSearch(url.searchParams);
+  const { results } = await env.DB.prepare(sql).bind(...binds).all();
   const more = results.length > limit;
   return json({ apps: results.slice(0, limit).map((r) => row2app(r)), next_offset: more ? offset + limit : null });
 }
+
+async function tags(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT t.tag AS id, COUNT(*) AS count FROM app_tags t JOIN apps a ON a.key = t.key WHERE a.listed = 1 GROUP BY t.tag ORDER BY count DESC, id"
+  ).all();
+  return json({ tags: results.map((x) => ({ id: x.id, count: x.count })) });
+}
+
+// ---------------------------------------------------------------- anonymous install counts
+
+const utcDay = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);
+
+// sha256 hex of "day|ip|key". Only the hash is stored, and only for 2 days (dedupe window).
+export async function installHash(day, ip, key) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${day}|${ip}|${key}`));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function recordInstall(env, request) {
+  const body = (request.headers.get("content-type") || "").includes("json") ? await request.json().catch(() => ({})) : {};
+  const id = typeof body?.id === "string" ? body.id.trim() : "";
+  if (!id || id.length > 64) return json({ error: "send {\"id\": \"app-id\", \"repo\": \"owner/name\"}" }, 400);
+  let row = null;
+  const r = typeof body.repo === "string" ? parseRepo(body.repo) : null;
+  if (r) row = await env.DB.prepare("SELECT key FROM apps WHERE key = ? AND app_id = ? AND listed = 1").bind(r.key, id).first();
+  // No repo, or it is not a listing of this id: count it for the oldest listing with that id.
+  if (!row) row = await env.DB.prepare("SELECT key FROM apps WHERE app_id = ? AND listed = 1 ORDER BY first_seen, key LIMIT 1").bind(id).first();
+  if (!row) return json({ error: "unknown app id" }, 404, { "cache-control": "no-store" });
+  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const d = utcDay();
+  const hash = await installHash(d, ip, row.key);
+  const seen = await env.DB.prepare("INSERT OR IGNORE INTO install_seen (day, hash) VALUES (?, ?)").bind(d, hash).run();
+  if (seen.meta?.changes) {
+    await env.DB.prepare("INSERT INTO installs (key, count) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET count = count + 1").bind(row.key).run();
+  }
+  const c = await env.DB.prepare("SELECT count FROM installs WHERE key = ?").bind(row.key).first();
+  return json({ ok: true, installs: c?.count ?? 0 }, 200, { "cache-control": "no-store" });
+}
+
+const pruneInstallSeen = (env) => env.DB.prepare("DELETE FROM install_seen WHERE day < ?").bind(utcDay(Date.now() - 86400000)).run();
 
 async function publish(env, request) {
   let body = {};
@@ -183,7 +245,7 @@ async function publish(env, request) {
 async function getApp(env, owner, repo) {
   const r = parseRepo(`${owner}/${repo}`);
   if (!r) return json({ error: "bad repo" }, 400);
-  const row = await env.DB.prepare("SELECT * FROM apps WHERE key = ?").bind(r.key).first();
+  const row = await env.DB.prepare(`SELECT a.*, ${WITH_INSTALLS} FROM apps a WHERE a.key = ?`).bind(r.key).first();
   const chk = await env.DB.prepare("SELECT commit_sha, ok, failures, checked_at FROM checks WHERE key = ?").bind(r.key).first();
   if (!row && !chk) return json({ error: "not indexed; POST /v1/publish to add it" }, 404);
   return json({ ...(row ? row2app(row, true) : { repo: `${r.owner}/${r.repo}`, listed: false }), last_check: chk ? { commit: chk.commit_sha, ok: Boolean(chk.ok), failures: parseJSON(chk.failures, []), checked_at: chk.checked_at } : null });
@@ -294,7 +356,9 @@ async function crawl(env) {
 
 const HOME = `Wizard App Index — find Wizard apps. The app repos are the source of truth; this index can be rebuilt from them.
 
-GET  /v1/search?q=video&slot=&type=&publisher=&arch=amd64&limit=20&offset=0
+GET  /v1/search?q=video&category=&tag=&slot=&type=&publisher=&arch=amd64&id=&sort=popular|new|name&limit=20&offset=0
+GET  /v1/tags                        purpose tags in use: {tags:[{id,count}]}
+POST /v1/installs {"id":"app-id","repo":"owner/name"}   anonymous install count (+1 per app, client, UTC day)
 GET  /v1/apps/{owner}/{repo}        full record + last check result (also shows why a repo is not listed)
 POST /v1/publish {"repo":"owner/name"}   check the repo now and list it if its wizard.md passes
      (also accepts a GitHub webhook: Payload URL https://apps.aiwizards.com/v1/publish, content type JSON, push events)
@@ -311,7 +375,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type" } });
     try {
       if ((path === "/wizard-apps" || path === "/store") && (request.method === "GET" || request.method === "HEAD")) {
-        const { results } = await env.DB.prepare("SELECT * FROM apps WHERE listed = 1 ORDER BY name COLLATE NOCASE").all();
+        const { results } = await env.DB.prepare(`SELECT a.*, ${WITH_INSTALLS} FROM apps a WHERE a.listed = 1 ORDER BY a.name COLLATE NOCASE`).all();
         return new Response(storePage(results.map((r) => row2app(r))), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60",
             "content-security-policy": "default-src 'none'; img-src 'self' https://raw.githubusercontent.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" },
@@ -320,6 +384,8 @@ export default {
       if (path === "/" && request.method === "GET") return new Response(HOME, { headers: { "content-type": "text/plain; charset=utf-8" } });
       if (path === "/v1/search" && request.method === "GET") return await search(env, url);
       if (path === "/v1/stats" && request.method === "GET") return await stats(env);
+      if (path === "/v1/tags" && request.method === "GET") return await tags(env);
+      if (path === "/v1/installs" && request.method === "POST") return await recordInstall(env, request);
       if (path === "/v1/publish" && request.method === "POST") return await publish(env, request);
       const m = /^\/v1\/apps\/([^/]+)\/([^/]+)$/.exec(path);
       if (m && request.method === "GET") return await getApp(env, decodeURIComponent(m[1]), decodeURIComponent(m[2]));
@@ -331,5 +397,6 @@ export default {
   },
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(crawl(env).then((r) => console.log("crawl", JSON.stringify(r))));
+    ctx.waitUntil(pruneInstallSeen(env));
   },
 };

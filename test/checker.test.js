@@ -108,3 +108,13 @@ test("icon is optional; when set it must exist and be png/jpg", async () => {
   assert.match(failures((await check(memReader(withIcon("icon.png")))).results).join(), /icon/);
   assert.match(failures((await check(memReader(withIcon("icon.svg", { "icon.svg": "x" })))).results).join(), /icon/);
 });
+
+test("tags are optional, from the purpose list, max 3", async () => {
+  const withTags = (t) => ({ ...base, "wizard.md": base["wizard.md"].replace("type: service\n", `type: service\ntags: ${t}\n`) });
+  const ok = await check(memReader(withTags("[video, audio]")));
+  assert.ok(passed(ok.results), failures(ok.results).join());
+  assert.deepEqual(ok.data.tags, ["video", "audio"]);
+  assert.match(failures((await check(memReader(withTags("[video, games]")))).results).join(), /tags are from the Wizard purpose list \(games\)/);
+  assert.match(failures((await check(memReader(withTags("video")))).results).join(), /purpose list/);
+  assert.match(failures((await check(memReader(withTags("[video, audio, data, home]")))).results).join(), /at most 3 tags/);
+});
