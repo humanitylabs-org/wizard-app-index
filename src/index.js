@@ -379,7 +379,7 @@ export default {
     try {
       if ((path === "/wizard-apps" || path === "/store") && (request.method === "GET" || request.method === "HEAD")) {
         const { results } = await env.DB.prepare(`SELECT a.*, ${WITH_INSTALLS} FROM apps a WHERE a.listed = 1 ORDER BY a.name COLLATE NOCASE`).all();
-        return new Response(storePage(results.map((r) => row2app(r))), {
+        return new Response(storePage(results.map((r) => ({ ...row2app(r), first_seen: r.first_seen }))), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60",
             "content-security-policy": "default-src 'none'; img-src 'self' https://raw.githubusercontent.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" },
         });
