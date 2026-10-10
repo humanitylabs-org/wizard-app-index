@@ -4,9 +4,9 @@
 // Filtering, sorting, search and the detail sheet run client-side over the embedded list (it is small).
 
 const GROUPS = [
-  ["agent", "Agents"],
-  ["app", "Apps"],
-  ["system", "System"],
+  ["agent", "Agents", "The AI that does the work, and the screens you use to talk to it."],
+  ["app", "Apps", "Things your agent can do for you."],
+  ["system", "System", "The basics every Wizard needs. Each one can be swapped for another app."],
 ];
 const INSTALL = "curl -fsSL aiwizards.com/os.sh | bash";
 
@@ -69,7 +69,7 @@ export function storePage(apps) {
     } else (by[a.category] || by.app).push(a);
   }
   const groups = GROUPS.filter(([k]) => by[k].length)
-    .map(([k, title]) => `<section class="lgroup" data-group="${k}"><h4>${title}</h4>
+    .map(([k, title, sub]) => `<section class="lgroup" data-group="${k}"><h4>${title}</h4><p class="gsub">${sub}</p>
 <div class="lgrid">${by[k].map((a) => cell(a, ifacesOf[a.id] || [])).join("\n")}</div></section>`)
     .join("\n");
 
@@ -91,7 +91,7 @@ export function storePage(apps) {
 <meta name="theme-color" content="#05030c">
 <meta name="color-scheme" content="dark">
 <title>Wizard Apps | AI Wizards</title>
-<meta name="description" content="Open apps for your Wizard. Each one is its own repo with a wizard.md, found automatically.">
+<meta name="description" content="Apps for your Wizard: a private AI server you own, with an AI agent that uses these apps for you. Install Wizard OS with one command, then add apps.">
 <style>
 :root{--bg:#05030c;--ink:#f3efff;--ink-2:#b9b0d8;--ink-3:#7d74a3;--line:rgba(205,190,255,.13);--line-2:rgba(205,190,255,.24);
 --glass:rgba(18,12,38,.58);--glass-2:rgba(28,19,58,.72);--violet:#8f63ff;--violet-2:#b99bff;--pink:#ff5ccf;--cyan:#3fe0ff;--green:#4ff0b0;
@@ -105,14 +105,29 @@ body{margin:0;min-height:100vh;color:var(--ink);font:15px/1.4 ui-sans-serif,syst
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 background:radial-gradient(60% 50% at 12% 0%,rgba(110,60,255,.22),transparent 70%),radial-gradient(50% 45% at 100% 30%,rgba(255,70,200,.10),transparent 70%),radial-gradient(70% 40% at 40% 100%,rgba(60,120,255,.12),transparent 70%)}
 .wrap{max-width:920px;margin:0 auto;padding:0 18px}
-header{position:sticky;top:0;z-index:10;background:rgba(8,5,18,.72);border-bottom:1px solid rgba(205,190,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+header{position:sticky;top:0;z-index:10;background:rgba(8,5,18,.94);border-bottom:1px solid rgba(205,190,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 header .wrap{display:flex;align-items:center;height:52px}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-weight:650;letter-spacing:.01em}
 .brand i{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-style:normal;color:#fff;background:linear-gradient(140deg,#6b46ff,#c04dff);box-shadow:0 6px 20px rgba(122,77,255,.35)}
 .hero{padding:30px 0 4px}
 .hero h1{font-size:clamp(32px,5vw,46px);line-height:1.05;margin:0 0 6px;letter-spacing:-.025em;font-weight:720;
 background:linear-gradient(120deg,#fff 30%,var(--violet-2) 70%,var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero p{color:var(--ink-2);font-size:16px;margin:0}
+.hero p{color:var(--ink-2);font-size:16px;line-height:1.5;margin:0;max-width:560px}
+.gsub{margin:-6px 4px 14px;font-size:13px;color:var(--ink-3)}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:14px 2px 0;font-size:12px;color:var(--ink-3)}
+.lg-pair{display:inline-flex;align-items:center;gap:6px;position:relative}
+.lg-pair i{width:14px;height:14px;border-radius:5px;background:linear-gradient(145deg,#6b46ff,#c04dff)}
+.lg-pair::after{content:"";position:absolute;left:12px;right:12px;top:6px;height:2px;background:linear-gradient(90deg,var(--violet-2),var(--cyan))}
+.lg-dash{display:inline-block;width:14px;height:14px;border-radius:5px;margin-left:10px;outline:1.5px dashed rgba(205,190,255,.6);outline-offset:1px}
+.how{margin:40px 0 0;padding:20px 20px 8px;border-radius:24px;background:var(--glass);border:1px solid var(--line)}
+.how h3{margin:0 0 10px;font-size:15px;font-weight:700}
+.how h3+p,.how ol+h3{margin-top:18px}
+.how ol{margin:0;padding-left:20px;color:var(--ink-2);font-size:14px;line-height:1.5}
+.how li{margin:0 0 8px}
+.how li b{color:var(--ink)}
+.how p{margin:0 0 12px;color:var(--ink-2);font-size:14px;line-height:1.5}
+.how a{color:var(--violet-2)}
+.how code{font:12.5px/1 var(--mono);color:var(--ink);background:rgba(205,190,255,.1);border-radius:6px;padding:2px 5px}
 .cmd{display:flex;align-items:center;gap:8px;max-width:440px;margin:16px 0 0;padding:6px 6px 6px 12px;border-radius:15px;background:var(--glass);border:1px solid var(--line)}
 .cmd code{flex:1;min-width:0;font:12px/1.3 var(--mono);color:var(--ink-2);white-space:nowrap;overflow-x:auto;scrollbar-width:none;user-select:all;-webkit-user-select:all}
 .cmd code::-webkit-scrollbar{display:none}
@@ -154,7 +169,7 @@ background:linear-gradient(120deg,#fff 30%,var(--violet-2) 70%,var(--pink));-web
 .lapp:active .ic{transform:scale(.9)}
 @media(hover:hover){.lapp:hover .ic{transform:translateY(-2px)}}
 .headless .ic,.ic.headless{box-shadow:none;outline:1.5px dashed rgba(205,190,255,.5);outline-offset:3px}
-.lapp .nm{font-size:11.5px;line-height:1.2;color:var(--ink-2);max-width:min(100%,84px);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.lapp .nm{font-size:11.5px;line-height:1.2;color:var(--ink-2);max-width:100%;padding:0 2px;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .lapp .dl{margin-top:-3px;font-size:10px;font-weight:650;color:var(--ink-3)}
 @media(min-width:600px){.ic{width:62px;height:62px;border-radius:20px}.lapp .nm{font-size:12.5px;max-width:96px}}
 .lpair{gap:6px;padding:4px 6px 2px;border-radius:22px;background:rgba(205,190,255,.05);box-shadow:inset 0 0 0 1px var(--line);grid-column:span 2}
@@ -177,6 +192,7 @@ background:linear-gradient(120deg,#fff 30%,var(--violet-2) 70%,var(--pink));-web
 .none{display:none;padding:30px 10px;text-align:center;color:var(--ink-3)}
 footer{margin-top:48px;padding:20px 0 calc(32px + env(safe-area-inset-bottom));border-top:1px solid rgba(205,190,255,.08);font-size:13px;color:var(--ink-3)}
 footer a{color:var(--ink-2);text-decoration:none}
+footer .wrap{display:flex;flex-wrap:wrap;gap:4px 10px}
 footer a:hover{color:var(--violet-2)}
 .scrim{position:fixed;inset:0;z-index:44;background:rgba(3,1,10,.55);opacity:0;pointer-events:none;transition:opacity 300ms;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 .open .scrim{opacity:1;pointer-events:auto}
@@ -211,7 +227,7 @@ button.pill:hover{border-color:var(--line-2);color:var(--ink)}
 <main class="wrap" id="main">
   <section class="hero">
     <h1>Wizard Apps</h1>
-    <p>Open apps for your Wizard.</p>
+    <p>A Wizard is your own private AI server: an AI agent running on a machine you control. These are the apps it can use, from video editing to files and transcription. All open source.</p>
     <span class="lbl" id="os-l">Install Wizard OS</span>
     <div class="cmd" role="group" aria-labelledby="os-l"><code>${esc(INSTALL)}</code><button class="copy" type="button" data-copy="${esc(INSTALL)}">Copy</button></div>
   </section>
@@ -221,11 +237,22 @@ button.pill:hover{border-color:var(--line-2);color:var(--ink)}
     <div class="chips"><button class="chip on" type="button" data-tag="">All<b>${apps.length}</b></button>${tagChips}</div>
     <div class="sort" role="group" aria-label="Sort"><button type="button" data-sort="pop" class="on">Popular</button><button type="button" data-sort="new">New</button><button type="button" data-sort="name">A-Z</button></div>
   </div>
+  <p class="legend"><span class="lg-pair"><i></i><i></i></span>Joined: an app and the screen you open it with<span class="lg-dash"></span>Dashed ring: runs in the background, no screen of its own</p>
   ${groups}
   <div class="rows" id="rows">${apps.map(row).join("\n")}</div>
   <p class="none" id="none">No apps match.</p>
+  <section class="how" aria-labelledby="how-h">
+    <h3 id="how-h">How it works</h3>
+    <ol>
+      <li><b>Get a server.</b> Any Ubuntu server or VPS. It stays on, so your agent can work while you're away.</li>
+      <li><b>Install Wizard OS.</b> Run the install command at the top of this page as root. It sets up the AI agent and the system apps, and keeps everything private to the server.</li>
+      <li><b>Talk to your agent.</b> Ask it to do things. It installs and uses apps from this page, or you can add them yourself.</li>
+    </ol>
+    <h3>Build an app</h3>
+    <p>Any public GitHub repo with a <code>wizard.md</code> file shows up here automatically. Start from the <a href="https://github.com/humanitylabs-org/wizard-app-manager/tree/main/templates/hello-wizard">template</a>.</p>
+  </section>
 </main>
-<footer><div class="wrap">API: <a href="https://apps.aiwizards.com">apps.aiwizards.com</a></div></footer>
+<footer><div class="wrap"><a href="https://www.aiwizards.com/">AI Wizards</a> · <a href="https://github.com/humanitylabs-org/wizard-app-manager">Wizard App Manager</a> · <span style="white-space:nowrap">API: <a href="https://apps.aiwizards.com">apps.aiwizards.com</a></span></div></footer>
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-n" tabindex="-1"></div>
 <script type="application/json" id="apps">${json}</script>
