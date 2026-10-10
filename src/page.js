@@ -119,11 +119,11 @@ background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(12px);
 .group>.card{max-width:calc((100% - 24px)/3)}
 .group.has-ifaces>.card{max-width:none;border-color:var(--line-2);background:var(--glass-2)}
 .ifaces{position:relative;padding-left:22px}
-.ifaces::before{content:"";position:absolute;left:8px;top:-12px;bottom:28px;border-left:2px solid rgba(143,99,255,.4);border-bottom:2px solid rgba(143,99,255,.4);border-bottom-left-radius:10px;width:10px}
+.ifaces::before{content:"";position:absolute;left:8px;top:-12px;height:76px;border-left:2px solid rgba(143,99,255,.4);border-bottom:2px solid rgba(143,99,255,.4);border-bottom-left-radius:10px;width:12px}
 .ifaces-label{display:block;margin:0 0 8px;font-size:13px;color:#968dbb}
 .grid.sub .icon{flex-basis:48px;width:48px;height:48px;border-radius:13px}
 @media(max-width:900px){.group>.card{max-width:calc((100% - 12px)/2)}}
-@media(max-width:600px){.group>.card{max-width:none}.ifaces{padding-left:16px}.ifaces::before{left:4px;width:8px}}
+@media(max-width:600px){.group>.card{max-width:none}.ifaces{padding-left:16px}.ifaces::before{left:4px;width:10px}}
 .icon{flex:0 0 60px;width:60px;height:60px;border-radius:16px;overflow:hidden;display:grid;place-items:center;background:linear-gradient(140deg,#6b46ff,#c04dff);box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .icon img{width:100%;height:100%;object-fit:cover;display:block}
 .mono{font-weight:700;font-size:24px;color:#fff}
