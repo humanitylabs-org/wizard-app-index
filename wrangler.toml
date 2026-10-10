@@ -7,6 +7,8 @@ routes = [
   # Public store page on the main site; only this path, everything else stays with aiwizards-frontend.
   # "wizard-apps*" also matches query strings (?utm=...) and sub-paths.
   { pattern = "www.aiwizards.com/wizard-apps*", zone_name = "aiwizards.com" },
+  # One-line Wizard OS install: curl -fsSL https://aiwizards.com/os.sh | bash
+  { pattern = "www.aiwizards.com/os.sh", zone_name = "aiwizards.com" },
 ]
 
 [[d1_databases]]
