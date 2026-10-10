@@ -368,17 +368,8 @@ Publish: add wizard.md (spec: humanitylabs-org/wizard-os spec/WIZARD_MD.md) at t
 tag it with the topic wizard-app, then POST /v1/publish or wait for the crawler. Installs pin to the checked commit.
 `;
 
-// One-line Wizard OS install (served at aiwizards.com/os.sh and apps.aiwizards.com/os.sh). Same as get.sh in
-// humanitylabs-org/wizard-app-manager: clone or update the App Manager, then run its install.sh.
-const OS_SH = `#!/usr/bin/env bash
-# Wizard OS: curl -fsSL https://aiwizards.com/os.sh | bash
-# Installs the Wizard App Manager (Runtipi + the Wizard App Index) and the default app in every parking spot.
-# Source: https://github.com/humanitylabs-org/wizard-app-manager (install.sh)
-set -euo pipefail
-DIR="\${WAM_DIR:-$HOME/wizard-app-manager}"
-if [ -d "$DIR/.git" ]; then git -C "$DIR" pull --ff-only -q; else git clone -q https://github.com/humanitylabs-org/wizard-app-manager "$DIR"; fi
-exec bash "$DIR/install.sh"
-`;
+// One-line Wizard OS install: aiwizards.com/os.sh serves get.sh from the public wizard-app-manager repo (one source).
+const OS_SH_SRC = "https://raw.githubusercontent.com/humanitylabs-org/wizard-app-manager/main/get.sh";
 
 export default {
   async fetch(request, env) {
@@ -394,7 +385,9 @@ export default {
         });
       }
       if (path === "/os.sh" && (request.method === "GET" || request.method === "HEAD")) {
-        return new Response(OS_SH, { headers: { "content-type": "text/x-shellscript; charset=utf-8", "cache-control": "public, max-age=300" } });
+        const r = await fetch(OS_SH_SRC, { cf: { cacheTtl: 300, cacheEverything: true } });
+        if (!r.ok) return new Response("echo 'Wizard OS installer is unavailable right now; try again in a minute' >&2; exit 1\n", { status: 502, headers: { "content-type": "text/x-shellscript; charset=utf-8" } });
+        return new Response(await r.text(), { headers: { "content-type": "text/x-shellscript; charset=utf-8", "cache-control": "public, max-age=300" } });
       }
       if (path === "/" && request.method === "GET") return new Response(HOME, { headers: { "content-type": "text/plain; charset=utf-8" } });
       if (path === "/v1/search" && request.method === "GET") return await search(env, url);
