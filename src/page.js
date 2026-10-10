@@ -3,8 +3,8 @@
 // glass panels, violet accents, gradient launcher tiles, system font stack.
 
 const SHELVES = [
-  ["agent", "Agents", "The AI agent that does the work."],
-  ["interface", "Interfaces", "Ways to talk to your agent."],
+  ["agent", "Agents & Interfaces", "The AI agent that does the work, with the interfaces you use to talk to it."],
+  ["interface", "Other Interfaces", "Interfaces for agents that aren't listed yet."],
   ["app", "Apps", "Things your agent can do for you."],
   ["system", "System Apps", "Shared building blocks other apps use."],
 ];
@@ -25,17 +25,45 @@ function card(a) {
 </a>`;
 }
 
+// The agent an interface ultimately talks to: follow `uses` (interface -> service -> agent), max 4 hops.
+function agentFor(a, byId) {
+  let cur = a;
+  for (let i = 0; i < 4 && cur; i++) {
+    const next = (cur.uses || []).map((u) => byId[u]).find(Boolean);
+    if (!next) return null;
+    if (next.category === "agent") return next.id;
+    cur = next;
+  }
+  return null;
+}
+
+function agentGroup(agent, ifaces) {
+  const kids = ifaces.length
+    ? `<div class="ifaces"><span class="ifaces-label">Interfaces for ${esc(agent.name)}</span><div class="grid sub">${ifaces.map(card).join("\n")}</div></div>`
+    : "";
+  return `<div class="group${ifaces.length ? " has-ifaces" : ""}">${card(agent)}${kids}</div>`;
+}
+
 export function storePage(apps) {
+  const byId = Object.fromEntries(apps.map((a) => [a.id, a]));
   const by = Object.fromEntries(SHELVES.map(([k]) => [k, []]));
   for (const a of apps) (by[a.category] || by.app).push(a);
+  const under = {};
+  by.interface = by.interface.filter((a) => {
+    const ag = agentFor(a, byId);
+    if (!ag) return true;
+    (under[ag] ||= []).push(a);
+    return false;
+  });
+  const count = (k) => (k === "agent" ? by.agent.length + Object.values(under).flat().length : by[k].length);
   const live = SHELVES.filter(([k]) => by[k].length);
   const shelves = live
     .map(([k, title, sub]) => `<section class="shelf" id="${k}">
   <div class="shelf-head"><h2>${title}</h2><p>${sub}</p></div>
-  <div class="grid">${by[k].map(card).join("\n")}</div>
+  ${k === "agent" ? `<div class="groups">${by.agent.map((a) => agentGroup(a, under[a.id] || [])).join("\n")}</div>` : `<div class="grid">${by[k].map(card).join("\n")}</div>`}
 </section>`)
     .join("\n");
-  const chips = live.map(([k, title]) => `<a class="chip" href="#${k}">${title}<b>${by[k].length}</b></a>`).join("");
+  const chips = live.map(([k, title]) => `<a class="chip" href="#${k}">${title}<b>${count(k)}</b></a>`).join("");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -85,6 +113,17 @@ background:linear-gradient(120deg,#fff 30%,var(--violet-2) 70%,var(--pink));-web
 background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:transform .25s var(--ease),border-color .2s,background .2s}
 .card:hover{transform:translateY(-2px);border-color:var(--line-2);background:var(--glass-2)}
 .card:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.groups{display:grid;gap:12px}
+.group{display:grid;gap:12px}
+.group.has-ifaces{padding:12px;border-radius:22px;border:1px solid var(--line);background:rgba(205,190,255,.03)}
+.group>.card{max-width:calc((100% - 24px)/3)}
+.group.has-ifaces>.card{max-width:none;border-color:var(--line-2);background:var(--glass-2)}
+.ifaces{position:relative;padding-left:22px}
+.ifaces::before{content:"";position:absolute;left:8px;top:-12px;bottom:28px;border-left:2px solid rgba(143,99,255,.4);border-bottom:2px solid rgba(143,99,255,.4);border-bottom-left-radius:10px;width:10px}
+.ifaces-label{display:block;margin:0 0 8px;font-size:13px;color:#968dbb}
+.grid.sub .icon{flex-basis:48px;width:48px;height:48px;border-radius:13px}
+@media(max-width:900px){.group>.card{max-width:calc((100% - 12px)/2)}}
+@media(max-width:600px){.group>.card{max-width:none}.ifaces{padding-left:16px}.ifaces::before{left:4px;width:8px}}
 .icon{flex:0 0 60px;width:60px;height:60px;border-radius:16px;overflow:hidden;display:grid;place-items:center;background:linear-gradient(140deg,#6b46ff,#c04dff);box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .icon img{width:100%;height:100%;object-fit:cover;display:block}
 .mono{font-weight:700;font-size:24px;color:#fff}
@@ -104,7 +143,7 @@ footer a{color:var(--violet-2)}
 <body>
 <header><div class="wrap">
   <a class="brand" href="/" aria-label="AI Wizards home"><i>✦</i>AI Wizards</a>
-  <nav><a href="#agent">Agents</a><a href="#system">System</a><a href="https://apps.aiwizards.com">API</a></nav>
+  <nav><a href="#agent">Agents & Interfaces</a><a href="#system">System</a><a href="https://apps.aiwizards.com">API</a></nav>
 </div></header>
 <main class="wrap">
   <section class="hero">
@@ -127,7 +166,7 @@ footer a{color:var(--violet-2)}
 const q=document.getElementById("q"),cards=[...document.querySelectorAll(".card")],shelves=[...document.querySelectorAll(".shelf")],empty=document.getElementById("empty");
 q.addEventListener("input",()=>{const t=q.value.trim().toLowerCase();let any=false;
 cards.forEach(c=>{const m=!t||c.dataset.search.includes(t);c.style.display=m?"":"none";any=any||m});
-shelves.forEach(s=>{s.style.display=[...s.querySelectorAll(".card")].some(c=>c.style.display!=="none")?"":"none"});
+document.querySelectorAll(".ifaces").forEach(g=>{g.style.display=[...g.querySelectorAll(".card")].some(c=>c.style.display!=="none")?"":"none"});\ndocument.querySelectorAll(".group").forEach(g=>{g.style.display=[...g.querySelectorAll(".card")].some(c=>c.style.display!=="none")?"":"none"});\nshelves.forEach(s=>{s.style.display=[...s.querySelectorAll(".card")].some(c=>c.style.display!=="none")?"":"none"});
 empty.style.display=any?"none":"block"});
 </script>
 </body>
