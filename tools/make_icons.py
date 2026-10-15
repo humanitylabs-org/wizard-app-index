@@ -54,6 +54,13 @@ GLYPHS = {
       <circle cx="186" cy="256" r="74" {stroke(26)}/>
       <circle cx="186" cy="256" r="20" fill="#fff"/>
       <path d="M260 256 H404 M364 256 V318 M318 256 V302" {stroke(26)}/>'''),
+    # System: Claude connection, a plain "C" arc with a plug link (not Anthropic's mark), clay orange
+    # System: Claude connection, a plain "C" arc wired to a two-prong plug (not Anthropic's mark), clay orange
+    "claude-connection": (["#e08a64", "#9c3d22"], f'''
+      <path d="M300 160 A112 112 0 1 0 300 352" {stroke(30)}/>
+      <path d="M254 256 H316" {stroke(22)}/>
+      <rect x="316" y="214" width="44" height="84" rx="12" fill="#fff"/>
+      <path d="M360 234 H398 M360 278 H398" {stroke(18)}/>'''),
 }
 
 
