@@ -370,8 +370,6 @@ tag it with the topic wizard-app, then POST /v1/publish or wait for the crawler.
 
 // One-line Wizard OS install: aiwizards.com/os.sh serves get.sh from the public wizard-app-manager repo (one source).
 const OS_SH_SRC = "https://raw.githubusercontent.com/humanitylabs-org/wizard-app-manager/main/get.sh";
-// Agent instructions for the same install (homepage pill: "Follow https://aiwizards.com/os.md ..."), same one source.
-const OS_MD_SRC = "https://raw.githubusercontent.com/humanitylabs-org/wizard-app-manager/main/os.md";
 
 export default {
   async fetch(request, env) {
@@ -390,11 +388,6 @@ export default {
         const r = await fetch(OS_SH_SRC, { cf: { cacheTtl: 300, cacheEverything: true } });
         if (!r.ok) return new Response("echo 'Wizard OS installer is unavailable right now; try again in a minute' >&2; exit 1\n", { status: 502, headers: { "content-type": "text/x-shellscript; charset=utf-8" } });
         return new Response(await r.text(), { headers: { "content-type": "text/x-shellscript; charset=utf-8", "cache-control": "public, max-age=300" } });
-      }
-      if (path === "/os.md" && (request.method === "GET" || request.method === "HEAD")) {
-        const r = await fetch(OS_MD_SRC, { cf: { cacheTtl: 300, cacheEverything: true } });
-        if (!r.ok) return new Response("Wizard OS install instructions are unavailable right now; try again in a minute.\n", { status: 502, headers: { "content-type": "text/markdown; charset=utf-8" } });
-        return new Response(await r.text(), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300" } });
       }
       if (path === "/" && request.method === "GET") return new Response(HOME, { headers: { "content-type": "text/plain; charset=utf-8" } });
       if (path === "/v1/search" && request.method === "GET") return await search(env, url);
