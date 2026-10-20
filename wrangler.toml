@@ -9,6 +9,8 @@ routes = [
   { pattern = "www.aiwizards.com/wizard-apps*", zone_name = "aiwizards.com" },
   # One-line Wizard OS install: curl -fsSL https://aiwizards.com/os.sh | bash
   { pattern = "www.aiwizards.com/os.sh", zone_name = "aiwizards.com" },
+  # One-time install approval (unadvertised): the owner's browser encrypts their server password to the box's key.
+  { pattern = "www.aiwizards.com/os-approve*", zone_name = "aiwizards.com" },
 ]
 
 [[d1_databases]]

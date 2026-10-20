@@ -5,6 +5,7 @@
 import { check, passed, failures, TAGS } from "./checker.js";
 import { parseRepo, resolveCommit, fileReader, searchTopic } from "./github.js";
 import { storePage } from "./page.js";
+import { handleApprove, pruneApprovals } from "./approve.js";
 
 const TOPICS = ["wizard-app", "wizard-ai"]; // wizard-ai only during the transition
 const RECHECK_AFTER = 7 * 24 * 3600; // re-verify listings weekly
@@ -375,8 +376,13 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
+    // No CORS for the approval relay: only its own page (same origin) and the box (no browser) may call it.
+    if (request.method === "OPTIONS" && path.startsWith("/os-approve")) return new Response(null, { status: 405 });
     if (request.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type" } });
     try {
+      if (path === "/os-approve" || path.startsWith("/os-approve/")) {
+        return await handleApprove(request, env, path);
+      }
       if ((path === "/wizard-apps" || path === "/store") && (request.method === "GET" || request.method === "HEAD")) {
         const { results } = await env.DB.prepare(`SELECT a.*, ${WITH_INSTALLS} FROM apps a WHERE a.listed = 1 ORDER BY a.name COLLATE NOCASE`).all();
         return new Response(storePage(results.map((r) => ({ ...row2app(r), first_seen: r.first_seen }))), {
@@ -406,5 +412,6 @@ export default {
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(crawl(env).then((r) => console.log("crawl", JSON.stringify(r))));
     ctx.waitUntil(pruneInstallSeen(env));
+    ctx.waitUntil(pruneApprovals(env));
   },
 };
