@@ -1,0 +1,110 @@
+name: app-image
+# Shared workflow for `runtime.package: image` apps (spec/WIZARD_MD.md, "Packaging").
+# Builds the app's image for linux/amd64 and linux/arm64 on native runners, then joins both into one
+# multi-arch tag `sha-<commit>` on GHCR. Apps call it with a five-line workflow:
+#
+#   on: {push: {branches: [main]}, workflow_dispatch: {}}
+#   permissions: {contents: read, packages: write}
+#   jobs:
+#     image:
+#       uses: humanitylabs-org/wizard-app-index/.github/workflows/app-image.yml@main
+#
+# Then pin the printed digest in runtipi/docker-compose.yml. A new GHCR package starts private:
+# make it public once in the package settings so boxes without a GitHub login can pull it.
+on:
+  workflow_call:
+    inputs:
+      context:
+        description: Build context, relative to the repo root
+        type: string
+        default: .
+      dockerfile:
+        description: Dockerfile path, relative to the repo root
+        type: string
+        default: Dockerfile
+      image:
+        description: Image name; defaults to ghcr.io/<owner>/<repo>
+        type: string
+        default: ""
+    outputs:
+      digest:
+        description: Multi-arch index digest (pin this in the compose file)
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: linux/amd64, runner: ubuntu-24.04, arch: amd64}
+          - {platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - id: name
+        run: |
+          img="${{ inputs.image }}"
+          [ -n "$img" ] || img="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "image=$img" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+      - run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.join.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: join
+        run: |
+          img="${{ inputs.image }}"
+          [ -n "$img" ] || img="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tag="$img:sha-${GITHUB_SHA}"
+          docker buildx imagetools create -t "$tag" $(for f in /tmp/digests/*; do echo "$img@$(cat "$f")"; done)
+          digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["digest"])')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Pin this in runtipi/docker-compose.yml"
+            echo
+            echo "\`$img:sha-${GITHUB_SHA}@$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -55,6 +55,102 @@ export function composeRisks(composeText) {
   return risks;
 }
 
+// Rule 14 (spec/WIZARD_MD.md "Packaging"): how an app's containers come to exist.
+export const PACKAGES = new Set(["source", "build", "image"]);
+const DIGEST = /@sha256:[0-9a-f]{64}$/;
+const VARX = /\$\{[A-Za-z_][A-Za-z0-9_]*(?::?-([^}]*))?\}/g;
+const COMPILE = /\b(npm|yarn|pnpm|bun) run build\b|\bcargo\b|\bgo build\b|\bmake\b|\bgcc\b|\bg\+\+|\brustc\b/;
+const resolved = (img) => String(img ?? "").replace(VARX, (_, d) => d ?? "");
+// Normalize a repo-relative path; null when it climbs out of the repo or is absolute.
+export function inside(...parts) {
+  const out = [];
+  for (const seg of parts.join("/").split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") { if (!out.length) return null; out.pop(); } else out.push(seg);
+  }
+  return parts.some((p) => String(p).startsWith("/")) ? null : out.join("/");
+}
+const hashLocked = (text) => {
+  if (text == null) return false;
+  const reqs = text.replace(/\\\n/g, " ").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  return reqs.length > 0 && reqs.every((l) => l.includes("--hash="));
+};
+export async function dockerfileProblems(read, file, ctx) {
+  const text = await read(file);
+  if (text == null) return [`no Dockerfile at ${file}`];
+  const lines = text.replace(/\\\n/g, " ").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  const args = {}, copies = {}, stages = new Set(), bad = [];
+  for (const ln of lines) {
+    let m = ln.match(/^ARG\s+([A-Za-z_]\w*)=(\S+)/i);
+    if (m) args[m[1]] = m[2];
+    m = ln.match(/^(?:COPY|ADD)\s+(?:--\S+\s+)*(\S+)\s+(\S+)$/i);
+    if (m) copies[m[2].endsWith("/") ? `${m[2].replace(/\/+$/, "")}/${m[1].split("/").pop()}` : m[2]] = m[1];
+  }
+  for (const ln of lines) {
+    let m = ln.match(/^FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?/i);
+    if (m) {
+      const img = m[1].replace(/\$\{?([A-Za-z_]\w*)\}?/g, (_, v) => args[v] ?? "");
+      if (!stages.has(img.toLowerCase()) && img !== "scratch" && !DIGEST.test(img)) bad.push(`FROM ${m[1]} is not pinned by digest`);
+      if (m[2]) stages.add(m[2].toLowerCase());
+      continue;
+    }
+    if (!/^RUN\b/i.test(ln)) continue;
+    if (COMPILE.test(ln)) bad.push(`compiles or bundles on the box: ${ln.slice(0, 80)}`);
+    for (const part of ln.split(/&&|;/)) {
+      if (!part.includes("pip install") || part.includes("--require-hashes")) continue;
+      const reqs = [...part.matchAll(/(?:-r|--requirement)\s+(\S+)/g)].map((x) => x[1]);
+      let ok = reqs.length > 0;
+      for (const r of reqs) {
+        const p = inside(ctx, (copies[r] ?? r).replace(/^\/+/, ""));
+        if (!p || !hashLocked(await read(p))) ok = false;
+      }
+      if (!ok) bad.push(`pip install is not hash-locked: ${part.trim().slice(0, 80)}`);
+    }
+  }
+  return bad;
+}
+export async function packagingProblems(read, pkg, composeText) {
+  if (!PACKAGES.has(pkg)) return [`runtime.package must be source, build or image, not ${JSON.stringify(pkg)}`];
+  let doc;
+  try {
+    doc = parseAllDocuments(composeText)[0]?.toJS() ?? {};
+  } catch (e) {
+    return [`compose does not parse: ${e.message}`];
+  }
+  const services = Object.entries((doc && doc.services) || {}).filter(([, s]) => s && typeof s === "object");
+  const builds = services.filter(([, s]) => s.build);
+  const bad = [];
+  let mounted = false;
+  for (const [n, s] of services) {
+    if (!s.build && !DIGEST.test(resolved(s.image))) bad.push(`${n}: image ${JSON.stringify(s.image ?? null)} is not pinned by digest (name@sha256:...)`);
+    for (const v of s.volumes || []) {
+      const [src, opts] = typeof v === "string" ? [v.split(":")[0], v.split(":").slice(2).join(",")] : [String(v?.source ?? ""), v?.read_only ? "ro" : ""];
+      if (!src.startsWith("${APP_SOURCE_DIR}")) continue;
+      mounted = true;
+      if (!opts.split(",").includes("ro")) bad.push(`${n}: \${APP_SOURCE_DIR} must be mounted read-only (:ro)`);
+    }
+  }
+  const names = builds.map(([n]) => n).join(", ");
+  if (pkg === "source") {
+    if (builds.length) bad.push(`source apps build nothing; remove build: from ${names}`);
+    if (!mounted) bad.push("source apps mount their code: add ${APP_SOURCE_DIR}[/subdir]:/app:ro to a service");
+  } else if (pkg === "image") {
+    if (builds.length) bad.push(`image apps use their published image; remove build: from ${names}`);
+  } else {
+    if (!builds.length) bad.push("build apps need a build: section (context relative to the repo root)");
+    for (const [n, s] of builds) {
+      const b = typeof s.build === "string" ? { context: s.build } : s.build;
+      const raw = String(b.context ?? ".");
+      const ctx = /\$\{/.test(raw) ? null : inside(raw);
+      if (ctx == null) { bad.push(`${n}: build.context ${JSON.stringify(raw)} must be a path inside the repo`); continue; }
+      const df = inside(ctx, String(b.dockerfile ?? "Dockerfile"));
+      if (df == null || (ctx && !df.startsWith(`${ctx}/`))) { bad.push(`${n}: build.dockerfile must stay inside the context`); continue; }
+      for (const p of await dockerfileProblems(read, df, ctx)) bad.push(`${n}: ${p}`);
+    }
+  }
+  return bad;
+}
+
 // read(path) -> Promise<string|null>; returns [{rule, ok, detail}], plus the parsed data.
 export async function check(read) {
   const out = [];
@@ -144,6 +240,10 @@ export async function check(read) {
   if (files.compose != null) {
     const risks = composeRisks(files.compose);
     rule("container asks for no host-level access", risks.length === 0, risks.join("; "));
+    if (rt.package != null) {
+      const probs = await packagingProblems(read, String(rt.package), files.compose);
+      rule(`packaging (${rt.package}) follows the rules`, probs.length === 0, probs.join("; "));
+    }
   }
   // Store logo: Runtipi's metadata/logo.jpg next to config.json, if the repo has one.
   let logo = null;
