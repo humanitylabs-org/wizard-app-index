@@ -30,6 +30,18 @@ const base = {
   "SKILL.md": "---\nname: hello\ndescription: say hello\n---\n",
 };
 
+test("spoken launch names have bounded strict validation", async () => {
+  for (const names of [[], ["Reading Room"], Array(8).fill("😀".repeat(40))]) {
+    const files = {...base, "wizard.md": base["wizard.md"].replace("id: hello", "id: hello\nvoice_names: " + JSON.stringify(names))};
+    const r = await check(memReader(files));
+    assert.ok(passed(r.results), failures(r.results).join("; "));
+  }
+  for (const names of [null, "reader", {}, [true], [1], [""], [" "], ["x".repeat(41)], Array(9).fill("x"), ["a\nb"]]) {
+    const files = {...base, "wizard.md": base["wizard.md"].replace("id: hello", "id: hello\nvoice_names: " + JSON.stringify(names))};
+    assert.match(failures((await check(memReader(files))).results).join(), /voice_names valid/);
+  }
+});
+
 test("minimal app passes", async () => {
   const r = await check(memReader(base));
   assert.ok(passed(r.results), failures(r.results).join("; "));

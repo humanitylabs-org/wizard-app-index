@@ -169,6 +169,12 @@ export async function check(read) {
     return { results: out, data: null };
   }
   rule("front matter parses", true);
+  if (Object.hasOwn(d, "voice_names")) {
+    const ns = d.voice_names;
+    rule("voice_names valid", Array.isArray(ns) && ns.length <= 8 && ns.every(n =>
+      typeof n === "string" && n.trim().length > 0 && [...n].length <= 40 && !/[\x00-\x1f\x7f]/.test(n)),
+      "at most 8 nonblank strings, each at most 40 characters, without controls");
+  }
   rule("spec version known", SPECS.has(Number(d.wizard)) && typeof d.wizard === "number", d.wizard);
   rule("id valid", ID.test(String(d.id ?? "")), d.id);
   const t = d.type;
