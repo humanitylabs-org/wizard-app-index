@@ -2,6 +2,18 @@
 // (spec v0.1/v0.2) rule for rule, plus a container-safety pass on the Runtipi compose file.
 // Input is a function that reads a file from the repo at a pinned commit.
 import { parse as parseYaml, parseAllDocuments } from "yaml";
+import dependencies from "./known_dependencies.json" with { type: "json" };
+
+export function knownDependencies() {
+  const known = new Set(NEEDS);
+  for (const app of dependencies.apps) {
+    if (app.app) {
+      known.add(app.app);
+      for (const capability of app.provides || []) known.add(capability);
+    }
+  }
+  return known;
+}
 
 export const TYPES = new Set(["agent", "service", "view", "external"]);
 export const CATEGORIES = new Set(["agent", "interface", "app", "system"]);
@@ -228,7 +240,7 @@ export async function check(read) {
     const v = d.view || {};
     rule("view declared", Boolean(v.path) && Boolean(v.port), JSON.stringify(v));
   }
-  const bad = (d.needs || []).filter((n) => !NEEDS.has(n) && !String(n).startsWith("credentials:"));
+  const bad = (d.needs || []).filter((n) => !knownDependencies().has(n) && !String(n).startsWith("credentials:"));
   rule("needs known", bad.length === 0, bad.join(", "));
   if (d.provides != null) {
     const pv = d.provides;

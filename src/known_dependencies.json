@@ -1,0 +1,76 @@
+{
+  "source": "humanitylabs-org/wizard-app-manager@fc84567cafdd4e77a906a1a57f8343d1cf6cc083:wam/defaults.json",
+  "about": "Offline needs vocabulary only; not installation availability, slot aliases, or authorization. Refresh both checker copies when WAM app IDs or explicit provides change.",
+  "apps": [
+    {
+      "app": "wizard-ux",
+      "provides": []
+    },
+    {
+      "app": "wizard-agent-service",
+      "provides": []
+    },
+    {
+      "app": "hermes-agent",
+      "provides": []
+    },
+    {
+      "app": "wizard-chatgpt",
+      "provides": []
+    },
+    {
+      "app": "wizard-claude",
+      "provides": []
+    },
+    {
+      "app": "wizard-troubleshooter",
+      "provides": []
+    },
+    {
+      "app": "wizard-connection-router",
+      "provides": [
+        "connection-router"
+      ]
+    },
+    {
+      "app": "files",
+      "provides": []
+    },
+    {
+      "app": "transcriber",
+      "provides": [
+        "transcription",
+        "speech-to-text-engine"
+      ]
+    },
+    {
+      "app": "wizard-voice-service",
+      "provides": [
+        "voice"
+      ]
+    },
+    {
+      "app": "browser",
+      "provides": []
+    },
+    {
+      "app": "secret-drop",
+      "provides": []
+    },
+    {
+      "app": "wizard-cloudflare",
+      "provides": []
+    },
+    {
+      "app": "wizard-connectors",
+      "provides": [
+        "connector-status",
+        "simulated-private-summary"
+      ]
+    },
+    {
+      "app": "notifications",
+      "provides": []
+    }
+  ]
+}

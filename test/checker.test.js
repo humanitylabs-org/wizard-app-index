@@ -42,6 +42,18 @@ test("spoken launch names have bounded strict validation", async () => {
   }
 });
 
+test("needs accepts WAM capabilities and app IDs, not aliases or self declarations", async () => {
+  for (const [need, accepted] of [
+    ["speech-to-text-engine", true], ["connection-router", true], ["wizard-voice-service", true],
+    ["home-network", true], ["credentials:test", true], ["accounts", false],
+    ["agent-history", false], ["wizard-agent-history", false], ["invented-engine", false],
+  ]) {
+    const files = {...base, "wizard.md": base["wizard.md"].replace("provides: [diagnostics]", `provides: [${need}]\nneeds: [${need}]`)};
+    const r = await check(memReader(files));
+    assert.equal(r.results.find(r => r.rule === "needs known").ok, accepted, need);
+  }
+});
+
 test("minimal app passes", async () => {
   const r = await check(memReader(base));
   assert.ok(passed(r.results), failures(r.results).join("; "));
