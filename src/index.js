@@ -44,6 +44,7 @@ function row2app(r, full = false) {
     architectures: parseJSON(r.architectures, []),
     install: { git: r.repo_url, commit: r.commit_sha },
     uses: parseJSON(r.uses, []),
+    needs: parseJSON(r.needs, []),
     tags: parseJSON(r.tags, []),
     installs: Number(r.installs) || 0,
     checked_at: r.checked_at,
