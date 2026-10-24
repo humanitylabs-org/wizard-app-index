@@ -130,3 +130,8 @@ test("tags are optional, from the purpose list, max 3", async () => {
   assert.match(failures((await check(memReader(withTags("video")))).results).join(), /purpose list/);
   assert.match(failures((await check(memReader(withTags("[video, audio, data, home]")))).results).join(), /at most 3 tags/);
 });
+
+test("home-network is a known need (apps that only work on a home connection)", async () => {
+  const { NEEDS } = await import("../src/checker.js");
+  assert.ok(NEEDS.has("home-network"));
+});

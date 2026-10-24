@@ -8,7 +8,7 @@ export const CATEGORIES = new Set(["agent", "interface", "app", "system"]);
 // Purposes for store browsing (wizard.md `tags`). Fixed list so the store can show one row per purpose.
 export const TAGS = new Set(["video", "audio", "photos", "writing", "research", "finance", "productivity", "communication", "developer", "automation", "security", "data", "home", "learning"]);
 export const MAX_TAGS = 3;
-export const NEEDS = new Set(["mic", "system-audio", "camera", "notifications", "files"]);
+export const NEEDS = new Set(["mic", "system-audio", "camera", "notifications", "files", "home-network"]);
 const SPECS = new Set([0.1, 0.2]);
 const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const NPUB = /^npub1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$/;
