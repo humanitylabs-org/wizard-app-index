@@ -13,6 +13,8 @@ routes = [
   { pattern = "www.aiwizards.com/os-approve*", zone_name = "aiwizards.com" },
   # Agent install instructions (unlisted: no homepage button; shared as one sentence). The apex 308s to www, like /os.sh.
   { pattern = "www.aiwizards.com/os.md", zone_name = "aiwizards.com" },
+  # Android companion onboarding, unlisted like /os.md; no homepage changes.
+  { pattern = "www.aiwizards.com/android.md", zone_name = "aiwizards.com" },
 ]
 
 [[d1_databases]]

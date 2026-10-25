@@ -374,6 +374,8 @@ tag it with the topic wizard-app, then POST /v1/publish or wait for the crawler.
 const OS_SH_SRC = "https://raw.githubusercontent.com/humanitylabs-org/wizard-app-manager/main/get.sh";
 // Agent instructions for the same install (unlisted link, no homepage button: "Set me up with Wizard OS by following the instructions at https://aiwizards.com/os.md"), same one source.
 const OS_MD_SRC = "https://raw.githubusercontent.com/humanitylabs-org/wizard-app-manager/main/os.md";
+// Unlisted Android companion onboarding; APK/source versions are pinned inside the document.
+export const ANDROID_MD_SRC = "https://raw.githubusercontent.com/humanitylabs-org/wizard-app-index/main/android.md";
 
 export default {
   async fetch(request, env) {
@@ -397,6 +399,11 @@ export default {
         const r = await fetch(OS_SH_SRC, { cf: { cacheTtl: 300, cacheEverything: true } });
         if (!r.ok) return new Response("echo 'Wizard OS installer is unavailable right now; try again in a minute' >&2; exit 1\n", { status: 502, headers: { "content-type": "text/x-shellscript; charset=utf-8" } });
         return new Response(await r.text(), { headers: { "content-type": "text/x-shellscript; charset=utf-8", "cache-control": "public, max-age=300" } });
+      }
+      if (path === "/android.md" && (request.method === "GET" || request.method === "HEAD")) {
+        const r = await fetch(ANDROID_MD_SRC, { cf: { cacheTtl: 300, cacheEverything: true } });
+        if (!r.ok) return new Response("Android Companion install instructions are unavailable right now; try again in a minute.\n", { status: 502, headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-store" } });
+        return new Response(request.method === "HEAD" ? null : await r.text(), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       }
       if (path === "/os.md" && (request.method === "GET" || request.method === "HEAD")) {
         const r = await fetch(OS_MD_SRC, { cf: { cacheTtl: 300, cacheEverything: true } });
