@@ -25,7 +25,7 @@ test('Android onboarding serves only GET/HEAD and fails closed upstream',async()
   }finally {globalThis.fetch=original;}
 });
 test('Android instructions pin public release and preserve trust, data and stable channel',()=>{
-  for (const text of ['4315358891d4bf726c3b98761359092588a98f32','c778c82f240279f7caa039aef929aef6c339cf36d83e3fdd6b7ab3c264b24ee6','ba972d734ec674f0c98ea031caac0fcd0d52d6bf391f69e5ea55cb9e9258c2f7','ai.wizards.shell.test','android-shell-v1.0.1-early-access','versionCode: `2`','Cancel / Pause / Resume','in-place update','phone checks of this signed release remain a separate step','does **not** include','Never clear app storage','Never publish the Wizard','no additional purchase']) assert.ok(doc.includes(text),text);
+  for (const text of ['c778c82f240279f7caa039aef929aef6c339cf36d83e3fdd6b7ab3c264b24ee6','ba972d734ec674f0c98ea031caac0fcd0d52d6bf391f69e5ea55cb9e9258c2f7','ai.wizards.shell.test','android-shell-v1.0.1-early-access','versionCode `2`','Tailscale access is not owner authentication','same Tailscale network','Only connect to a Wizard the owner trusts','Test-app recordings, settings and shortcuts do not transfer automatically','owner confirms it is safe to remove','Never clear its storage','Home-screen shortcuts require support','Android launcher','Installed; phone checks pending.','Never make the Wizard public','Never install a test build','There is no purchase.']) assert.ok(doc.includes(text),text);
   assert.doesNotMatch(doc,/tail6adf1a|oscarvps|:8829|:8831|\/home\/oscar|wizard-android-test/);
   const routes=readFileSync(new URL('../wrangler.toml',import.meta.url),'utf8');
   assert.ok(routes.includes('www.aiwizards.com/android.md'));
