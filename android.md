@@ -20,22 +20,22 @@ Tell the owner to turn on Tailscale on their Android phone, signed into the same
 
 Install only this pinned early-access release, not a moving branch, Actions artifact, debug APK or another app's update feed:
 
-https://github.com/humanitylabs-org/wizard-ux/releases/tag/android-shell-v1.0.0-early-access
+https://github.com/humanitylabs-org/wizard-ux/releases/tag/android-shell-v1.0.1-early-access
 
 Release manifest:
 
-https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.0-early-access/android-companion.json
+https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.1-early-access/android-companion.json
 
 APK:
 
-https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.0-early-access/wizard-android-companion-1.0.0.apk
+https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.1-early-access/wizard-android-companion-1.0.1.apk
 
-Verify the manifest and downloaded APK on the agent's machine before handing over the link. Expected application ID: `ai.wizards.shell`; versionName: `1.0.0`; versionCode: `1`; minimum Android API: `28`. Source: `humanitylabs-org/wizard-ux` commit `745d20cc0c76d667a9a61ec977d0d3307afe397b`, module `android/shell` only.
+Verify the manifest and downloaded APK on the agent's machine before handing over the link. Expected application ID: `ai.wizards.shell`; versionName: `1.0.1`; versionCode: `2`; minimum Android API: `28`. Source: `humanitylabs-org/wizard-ux` commit `4315358891d4bf726c3b98761359092588a98f32`, module `android/shell` only.
 
 Expected APK SHA-256:
 
 ```
-19d9f10cbf499332f56d06bf3ecab2e9c2112ff0c953ce1b66e185aac4828a24
+c778c82f240279f7caa039aef929aef6c339cf36d83e3fdd6b7ab3c264b24ee6
 ```
 
 Expected signing certificate SHA-256 (use Android SDK `apksigner verify --print-certs` when available):
@@ -45,6 +45,8 @@ ba972d734ec674f0c98ea031caac0fcd0d52d6bf391f69e5ea55cb9e9258c2f7
 ```
 
 If verification fails, stop. Do not substitute another download or tell the owner to ignore Android's warnings.
+
+Version 1.0.1 fixes the floating orb’s Cancel / Pause / Resume controls; holding the orb pauses instead of hiding it. This does not unlock Everywhere on ordinary stable web. The owner accepted the matching debug fix; installation and phone checks of this signed release remain a separate step.
 
 ## 3. Human phone install
 
@@ -71,6 +73,8 @@ Ask the owner to confirm: the app opens their own Wizard; an ordinary chat works
 Report what the owner actually confirms. If not confirmed, say “installed; phone checks still pending,” not “everything works.” For reachability, check Tailscale and the same link in Chrome first. Never replace the owner's installation with a test server or bypass TLS.
 
 ## Updates, test-app migration and removal
+
+Updating public 1.0.0 to this signed 1.0.1 keeps the same app package and signer and should preserve its local data; let Android offer an in-place update. If Android refuses, stop and inspect the error rather than uninstalling or clearing storage.
 
 Future APK updates must retain application ID `ai.wizards.shell` and the signing certificate above, with an increasing versionCode. Verify each explicitly published release and let the owner tap Android's update confirmation. Web updates deliver web features; native capability, lifecycle and security fixes still require APK updates. This shell does not silently update from the full app's feed.
 

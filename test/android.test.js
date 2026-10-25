@@ -25,7 +25,7 @@ test('Android onboarding serves only GET/HEAD and fails closed upstream',async()
   }finally {globalThis.fetch=original;}
 });
 test('Android instructions pin public release and preserve trust, data and stable channel',()=>{
-  for (const text of ['745d20cc0c76d667a9a61ec977d0d3307afe397b','19d9f10cbf499332f56d06bf3ecab2e9c2112ff0c953ce1b66e185aac4828a24','ba972d734ec674f0c98ea031caac0fcd0d52d6bf391f69e5ea55cb9e9258c2f7','ai.wizards.shell.test','early-access','versionCode: `1`','does **not** include','Never clear app storage','Never publish the Wizard','no additional purchase']) assert.ok(doc.includes(text),text);
+  for (const text of ['4315358891d4bf726c3b98761359092588a98f32','c778c82f240279f7caa039aef929aef6c339cf36d83e3fdd6b7ab3c264b24ee6','ba972d734ec674f0c98ea031caac0fcd0d52d6bf391f69e5ea55cb9e9258c2f7','ai.wizards.shell.test','android-shell-v1.0.1-early-access','versionCode: `2`','Cancel / Pause / Resume','in-place update','phone checks of this signed release remain a separate step','does **not** include','Never clear app storage','Never publish the Wizard','no additional purchase']) assert.ok(doc.includes(text),text);
   assert.doesNotMatch(doc,/tail6adf1a|oscarvps|:8829|:8831|\/home\/oscar|wizard-android-test/);
   const routes=readFileSync(new URL('../wrangler.toml',import.meta.url),'utf8');
   assert.ok(routes.includes('www.aiwizards.com/android.md'));
