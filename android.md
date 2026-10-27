@@ -28,23 +28,23 @@ Use only this release. Never use another branch, build artifact or debug APK.
 
 Release:
 
-https://github.com/humanitylabs-org/wizard-ux/releases/tag/android-shell-v1.0.1-early-access
+https://github.com/humanitylabs-org/wizard-ux/releases/tag/android-shell-v1.0.2-early-access
 
 Manifest:
 
-https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.1-early-access/android-companion.json
+https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.2-early-access/android-companion.json
 
 APK:
 
-https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.1-early-access/wizard-android-companion-1.0.1.apk
+https://github.com/humanitylabs-org/wizard-ux/releases/download/android-shell-v1.0.2-early-access/wizard-android-companion-1.0.2.apk
 
 Download the manifest and the APK on your own machine and check them before sending the owner anything:
 
-- application ID `ai.wizards.shell`, versionName `1.0.1`, versionCode `2`, minimum Android API `28`
+- application ID `ai.wizards.shell`, versionName `1.0.2`, versionCode `3`, minimum Android API `28`
 - APK SHA-256:
 
 ```
-c778c82f240279f7caa039aef929aef6c339cf36d83e3fdd6b7ab3c264b24ee6
+3a111e612396d7c72f11c4f04dffdb9e4508c7c2bbb83a3d70e1de443ddea9d3
 ```
 
 - signing certificate SHA-256 (check with `apksigner verify --print-certs` if the Android SDK is available):
@@ -63,7 +63,7 @@ Send the owner the APK link, then this message, word for word:
 > 2. Open the download and tap Install. If Android asks, allow "Install unknown apps" for Chrome, then go back and tap Install. You can turn that setting off again afterwards.
 > 3. Keep Play Protect on. This app comes straight from us, not the Play Store, so Android may warn you once.
 > 4. Open the app called Wizard, paste your private Wizard link, and tap Connect.
-> 5. To switch to a different Wizard later, press and hold the app icon and tap Change Wizard.
+> 5. To switch to a different Wizard later, press and hold the app icon and tap Change Wizard. The app remembers every Wizard you have connected to: tap one in the list to switch, or hold it to remove it from the list.
 >
 > If your phone or work policy blocks the install, stop and tell me what it says.
 
