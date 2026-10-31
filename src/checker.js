@@ -23,6 +23,25 @@ export const MAX_TAGS = 3;
 export const NEEDS = new Set(["mic", "system-audio", "camera", "notifications", "files", "home-network"]);
 const SPECS = new Set([0.1, 0.2]);
 const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
+// The app id is the app's name in kebab-case (Connected accounts -> connected-accounts), optionally "wizard-"
+// prefixed, or a staging copy of it (movies-next, search-preview; "Philosopher (agent)" -> agent-philosopher).
+// Apps listed before this rule keep listing; each moves to its name with a release that sets renamed_from.
+// Never add to this list.
+export const LEGACY_IDS = new Set(["cinequeue", "usuals", "outline-streaming-demo", "wizard-connectors", "voice-outline",
+  "mizel", "hermes-frontend-3", "smart-home", "wizard-ux"]);
+const STAGING = /\s*\((?:[^()]*\s)?(test|preview|next|beta|alpha|agent|demo)\)\s*$/i;
+export const kebab = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+export function idIsName(id, name) {
+  const m = STAGING.exec(String(name ?? ""));
+  const base = kebab(String(name ?? "").replace(STAGING, ""));
+  if (!base) return false;
+  const ok = new Set([base, `wizard-${base}`]);
+  for (const b of [...ok]) {
+    for (const s of ["next", "preview", "test"]) ok.add(`${b}-${s}`);
+    if (m) { ok.add(`${b}-${m[1].toLowerCase()}`); ok.add(`${m[1].toLowerCase()}-${b}`); }
+  }
+  return ok.has(String(id));
+}
 const NPUB = /^npub1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$/;
 const VERSION = /^\d+\.\d+\.\d+([-+.][\w.]+)?$/;
 
@@ -189,6 +208,13 @@ export async function check(read) {
   }
   rule("spec version known", SPECS.has(Number(d.wizard)) && typeof d.wizard === "number", d.wizard);
   rule("id valid", ID.test(String(d.id ?? "")), d.id);
+  rule("id is the app's name", idIsName(d.id, d.name) || LEGACY_IDS.has(String(d.id)),
+    `id ${d.id} should be ${kebab(String(d.name ?? "").replace(STAGING, "")) || "the name"} in kebab-case`);
+  if (Object.hasOwn(d, "renamed_from")) {
+    const rf = typeof d.renamed_from === "string" ? [d.renamed_from] : d.renamed_from;
+    rule("renamed_from lists earlier app ids", Array.isArray(rf) && rf.length > 0 && rf.every((x) => typeof x === "string" && ID.test(x) && x !== d.id),
+      "a list of the app's earlier ids, not its own id");
+  }
   const t = d.type;
   rule("type valid", TYPES.has(t), t);
   rule("version valid", VERSION.test(String(d.version ?? "")), d.version);
