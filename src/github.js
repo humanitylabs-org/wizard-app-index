@@ -18,6 +18,21 @@ export function parseRepo(input) {
   return { owner, repo, key: `github:${owner}/${repo}`.toLowerCase(), url: `https://github.com/${owner}/${repo}` };
 }
 
+// A renamed or transferred repo: github.com answers the old name with a 301 to the current one (git still serves
+// the old name, so without this the index would list one app twice). No REST API call. Returns the current repo,
+// or null when the name is current or GitHub did not say.
+export async function currentName(r) {
+  let res;
+  try {
+    res = await fetch(r.url, { method: "HEAD", redirect: "manual", headers: { "User-Agent": UA } });
+  } catch {
+    return null;
+  }
+  if (res.status !== 301 && res.status !== 308) return null;
+  const to = parseRepo((res.headers.get("location") || "").split(/[?#]/)[0]);
+  return to && to.key !== r.key ? to : null;
+}
+
 // Parse a git-upload-pack ref advertisement into {head, symref, refs}.
 export function parseRefs(text) {
   const refs = {};

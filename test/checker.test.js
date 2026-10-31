@@ -147,3 +147,14 @@ test("home-network is a known need (apps that only work on a home connection)", 
   const { NEEDS } = await import("../src/checker.js");
   assert.ok(NEEDS.has("home-network"));
 });
+
+import { idIsName, LEGACY_IDS } from "../src/checker.js";
+
+test("app id is the app's name (kebab-case, wizard- prefix, staging labels); legacy ids frozen", () => {
+  for (const [id, name] of [["movies", "Movies"], ["connected-accounts", "Connected accounts"], ["wizard-calendar", "Calendar"],
+    ["wizard-files", "Wizard Files"], ["movies-next", "Movies (test)"], ["search-preview", "Search (Oscar preview)"],
+    ["agent-philosopher", "Philosopher (agent)"]]) assert.ok(idIsName(id, name), `${id} / ${name}`);
+  for (const [id, name] of [["cinequeue", "Movies"], ["popcornbox", "Movies"], ["usuals", "Food"], ["movies", ""]])
+    assert.ok(!idIsName(id, name), `${id} / ${name}`);
+  assert.ok(LEGACY_IDS.has("wizard-connectors") && !LEGACY_IDS.has("popcornbox"));
+});

@@ -3,7 +3,7 @@
 // database can be dropped and rebuilt. Publishing only *notifies* the index; nothing in a
 // publish request is trusted, the index always reads the repo itself.
 import { check, passed, failures, TAGS } from "./checker.js";
-import { parseRepo, resolveCommit, fileReader, searchTopic } from "./github.js";
+import { parseRepo, resolveCommit, fileReader, searchTopic, currentName } from "./github.js";
 import { storePage } from "./page.js";
 import { handleApprove, pruneApprovals } from "./approve.js";
 
@@ -60,7 +60,26 @@ export const tagsOf = (d) => [...new Set((Array.isArray(d.tags) ? d.tags : []).f
 // Check one repo at its current commit and write the result. Returns a publish report.
 export const categoryOf = (d) => (["agent", "interface", "app", "system"].includes(d.category) ? d.category : d.type === "agent" ? "agent" : "app");
 
-export async function indexRepo(env, r, { via, ref } = {}) {
+// A repo renamed on GitHub is listed once, under its current name; the old name's row is delisted ("renamed to ...")
+// so an app id never resolves to two repos that are one repo.
+export const delistStmts = (env, key, failures, t) => [
+  env.DB.prepare("INSERT OR REPLACE INTO checks (key, commit_sha, ok, failures, checked_at) VALUES (?, NULL, 0, ?, ?)").bind(key, JSON.stringify(failures), t),
+  env.DB.prepare("UPDATE apps SET listed = 0, checked_at = ? WHERE key = ?").bind(t, key),
+  env.DB.prepare("DELETE FROM apps_fts WHERE key = ?").bind(key),
+  env.DB.prepare("DELETE FROM app_slots WHERE key = ?").bind(key),
+  env.DB.prepare("DELETE FROM app_tags WHERE key = ?").bind(key),
+  env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(key),
+];
+
+export async function indexRepo(env, r, { via, ref, renamed } = {}) {
+  if (!renamed) {
+    const to = await currentName(r);
+    if (to) {
+      await env.DB.batch(delistStmts(env, r.key, [`renamed to ${to.owner}/${to.repo}`], now()));
+      const rep = await indexRepo(env, to, { via, ref, renamed: true });
+      return { ...rep, renamed_from_repo: `${r.owner}/${r.repo}` };
+    }
+  }
   const c = await resolveCommit(r, ref);
   const t = now();
   if (c.error) {
