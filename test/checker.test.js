@@ -156,5 +156,7 @@ test("app id is the app's name (kebab-case, wizard- prefix, staging labels); leg
     ["agent-philosopher", "Philosopher (agent)"]]) assert.ok(idIsName(id, name), `${id} / ${name}`);
   for (const [id, name] of [["cinequeue", "Movies"], ["popcornbox", "Movies"], ["usuals", "Food"], ["movies", ""]])
     assert.ok(!idIsName(id, name), `${id} / ${name}`);
-  assert.ok(LEGACY_IDS.has("wizard-connectors") && !LEGACY_IDS.has("popcornbox"));
+  assert.ok(LEGACY_IDS.has("wizard-ux") && !LEGACY_IDS.has("popcornbox"));
+  for (const id of ["cinequeue", "usuals", "outline-streaming-demo", "wizard-connectors", "voice-outline"])
+    assert.ok(!LEGACY_IDS.has(id), `${id} has a named successor; do not restore its exception`);
 });

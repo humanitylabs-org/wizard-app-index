@@ -27,7 +27,7 @@ const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
 // prefixed, or a staging copy of it (movies-next, search-preview; "Philosopher (agent)" -> agent-philosopher).
 // Apps listed before this rule keep listing; each moves to its name with a release that sets renamed_from.
 // Never add to this list.
-export const LEGACY_IDS = new Set(["cinequeue", "usuals", "outline-streaming-demo", "wizard-connectors", "voice-outline",
+export const LEGACY_IDS = new Set([
   "mizel", "hermes-frontend-3", "smart-home", "wizard-ux"]);
 const STAGING = /\s*\((?:[^()]*\s)?(test|preview|next|beta|alpha|agent|demo)\)\s*$/i;
 export const kebab = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");

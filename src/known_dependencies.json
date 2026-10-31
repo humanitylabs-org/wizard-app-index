@@ -62,7 +62,7 @@
       "provides": []
     },
     {
-      "app": "wizard-connectors",
+      "app": "connected-accounts",
       "provides": [
         "connector-status",
         "simulated-private-summary"
