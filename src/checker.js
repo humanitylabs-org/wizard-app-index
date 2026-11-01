@@ -303,7 +303,7 @@ export async function check(read) {
       if ((await read(cand)) != null) { logo = cand; break; }
     }
   }
-  return { results: out, data: d, config, body: body(text), logo };
+  return { results: out, data: d, config, body: body(text), logo, compose: files.compose };
 }
 
 export const passed = (results) => results.length > 0 && results.every((r) => r.ok);

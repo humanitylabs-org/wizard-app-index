@@ -3,6 +3,7 @@
 // database can be dropped and rebuilt. Publishing only *notifies* the index; nothing in a
 // publish request is trusted, the index always reads the repo itself.
 import { check, passed, failures, TAGS } from "./checker.js";
+import { checkImages } from "./images.js";
 import { parseRepo, resolveCommit, fileReader, searchTopic, currentName } from "./github.js";
 import { storePage } from "./page.js";
 import { handleApprove, pruneApprovals } from "./approve.js";
@@ -10,6 +11,16 @@ import { handleApprove, pruneApprovals } from "./approve.js";
 const TOPICS = ["wizard-app", "wizard-ai"]; // wizard-ai only during the transition
 const RECHECK_AFTER = 7 * 24 * 3600; // re-verify listings weekly
 const PUBLISH_COOLDOWN = 60; // seconds; same repo+commit
+const IMAGE_PENDING_FOR = 7 * 24 * 3600; // keep re-checking a commit whose image has not landed yet
+// Re-check a commit waiting for its image: fast at first (CI runs minutes), backing off to 6 h, up to 7 days.
+export function pendingRetry(since, t) {
+  const start = Number(since) || t;
+  if (t - start > IMAGE_PENDING_FOR) return null;
+  return { reason: `image-pending:${start}`, at: t + Math.min(6 * 3600, Math.max(600, Math.floor((t - start) / 4))) };
+}
+// While a new commit's image is missing or a registry is down, the listed release stays (boxes keep
+// installing what they can pull). Only a listed commit whose own image is gone is delisted.
+export const keepListing = (prev, sha, img) => Boolean(prev?.listed) && (prev.commit_sha !== sha || !img.missing.length);
 const QUEUE_BATCH = 25; // repo checks per cron run (each is ~4 subrequests)
 const SWEEP_START = Date.UTC(2026, 8, 1) / 1000; // the wizard-app topic did not exist before this
 
@@ -71,7 +82,7 @@ export const delistStmts = (env, key, failures, t) => [
   env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(key),
 ];
 
-export async function indexRepo(env, r, { via, ref, renamed } = {}) {
+export async function indexRepo(env, r, { via, ref, renamed, pendingSince } = {}) {
   if (!renamed) {
     const to = await currentName(r);
     if (to) {
@@ -109,6 +120,22 @@ export async function indexRepo(env, r, { via, ref, renamed } = {}) {
   const provides = Array.isArray(d.provides) ? d.provides.map(String) : [];
   const tags = tagsOf(d);
   const archs = Array.isArray(res.config?.supported_architectures) ? res.config.supported_architectures : [];
+  // Installable means pullable: every image the box will pull exists publicly for every promised architecture.
+  const img = await (env.checkImages || checkImages)(res.compose || "", archs);
+  if (!img.ok) {
+    const imgFails = [...img.missing, ...img.transient].map((x) => `images published and public (${x})`);
+    const prev = await env.DB.prepare("SELECT commit_sha, listed FROM apps WHERE key = ?").bind(r.key).first();
+    const retry = pendingRetry(pendingSince, t);
+    const out = [env.DB.prepare("INSERT OR REPLACE INTO checks (key, commit_sha, ok, failures, checked_at) VALUES (?, ?, 0, ?, ?)").bind(r.key, c.sha, JSON.stringify(imgFails), t)];
+    // Image CI usually finishes after the push that published the commit. Keep the last installable release
+    // listed meanwhile (never swap boxes onto a commit they cannot pull) and re-check until the image lands.
+    const keep = keepListing(prev, c.sha, img);
+    if (!keep) out.push(...delistStmts(env, r.key, imgFails, t).slice(1));
+    if (retry) out.push(env.DB.prepare("INSERT OR REPLACE INTO queue (key, full, reason, added_at) VALUES (?, ?, ?, ?)").bind(r.key, `${r.owner}/${r.repo}`, retry.reason, retry.at));
+    await env.DB.batch(out);
+    return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: false, pending: Boolean(retry), failures: imgFails,
+      ...(keep ? { still_listed: prev.commit_sha } : {}) };
+  }
   stmts.push(
     env.DB.prepare(
       `INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, ref, app_id, name, summary, type, version, license, publisher_npub, provides, uses, needs, architectures, manifest, found_via, first_seen, checked_at, listed, category, logo, tags)
@@ -260,7 +287,8 @@ async function publish(env, request) {
     }
   }
   const report = await indexRepo(env, r, { via: "publish", ref });
-  return json(report, report.listed ? 200 : 422);
+  // 202: checks passed except the image, which is still being published; the index re-checks by itself.
+  return json(report, report.listed ? 200 : report.pending && report.failures.every((f) => f.startsWith("images published")) ? 202 : 422);
 }
 
 async function getApp(env, owner, repo) {
@@ -356,7 +384,7 @@ async function crawl(env) {
   writes.push(set("last_crawl", t), set("last_crawl_found", found));
   if (writes.length) await env.DB.batch(writes);
   // 4) Work the queue.
-  const batch = await env.DB.prepare("SELECT key, full, reason FROM queue ORDER BY added_at LIMIT ?").bind(QUEUE_BATCH).all();
+  const batch = await env.DB.prepare("SELECT key, full, reason FROM queue WHERE added_at <= ? ORDER BY added_at LIMIT ?").bind(t, QUEUE_BATCH).all();
   let listed = 0;
   for (const item of batch.results) {
     const full = item.full;
@@ -364,9 +392,10 @@ async function crawl(env) {
     await env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(item.key).run();
     if (!r) continue;
     const known = await env.DB.prepare("SELECT checked_at FROM checks WHERE key = ?").bind(r.key).first();
-    if (item.reason !== "recheck" && known && t - known.checked_at < 3600) continue; // checked recently
+    const pending = /^image-pending:(\d+)$/.exec(item.reason || "");
+    if (item.reason !== "recheck" && !pending && known && t - known.checked_at < 3600) continue; // checked recently
     try {
-      const rep = await indexRepo(env, r, { via: "crawl" });
+      const rep = await indexRepo(env, r, { via: "crawl", pendingSince: pending ? Number(pending[1]) : undefined });
       if (rep.listed) listed++;
     } catch (e) {
       console.log("index failed", full, String(e));
