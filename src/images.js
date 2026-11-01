@@ -11,6 +11,7 @@ const ACCEPT = [
 ].join(", ");
 const INDEX_TYPES = new Set(["application/vnd.oci.image.index.v1+json", "application/vnd.docker.distribution.manifest.list.v2+json"]);
 const TIMEOUT_MS = 8000;
+const H0 = { get: () => null };
 
 // ${VAR:-default} / ${VAR-default} take their default; a bare ${VAR} cannot be resolved by the index.
 export function resolveVars(s) {
@@ -46,13 +47,15 @@ export function parseImage(ref) {
   }
   let reference = "latest";
   const at = rest.indexOf("@");
+  let tag = null;
   if (at >= 0) { reference = rest.slice(at + 1); rest = rest.slice(0, at); }
   // name:tag@digest pulls by digest; the tag is informational.
   const colon = rest.lastIndexOf(":");
-  if (colon > rest.lastIndexOf("/")) { if (at < 0) reference = rest.slice(colon + 1); rest = rest.slice(0, colon); }
+  if (colon > rest.lastIndexOf("/")) { tag = rest.slice(colon + 1); if (at < 0) reference = tag; rest = rest.slice(0, colon); }
+  if (at < 0 && !tag) tag = "latest";
   if (registry === "docker.io" && !rest.includes("/")) rest = `library/${rest}`;
   if (!/^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/.test(rest) || !reference) return null;
-  return { registry, host: registry === "docker.io" ? "registry-1.docker.io" : registry, repository: rest, reference };
+  return { registry, host: registry === "docker.io" ? "registry-1.docker.io" : registry, repository: rest, reference, tag };
 }
 
 function challenge(header) {
@@ -92,6 +95,21 @@ async function registryRequest(fetcher, img, path, method, tokens) {
   return res;
 }
 
+// Docker Hub rate-limits anonymous registry calls per IP, and Worker egress IPs are shared, so a 429 says
+// nothing about the image. Its web API answers the same question (and lists architectures) on separate limits.
+async function hubFallback(fetcher, img) {
+  const base = `https://hub.docker.com/v2/repositories/${img.repository}`;
+  const r = await get(fetcher, img.tag ? `${base}/tags/${encodeURIComponent(img.tag)}` : base, { Accept: "application/json" });
+  if (r.status === 404 && img.tag && img.reference !== img.tag) {
+    // Digest pin whose tag has since moved: the digest stays pullable while the repository exists.
+    const repo = await get(fetcher, base, { Accept: "application/json" });
+    return repo.status === 200 ? { status: 200 } : { status: repo.status };
+  }
+  if (r.status !== 200) return { status: r.status };
+  const body = await r.json().catch(() => ({}));
+  return { status: 200, archs: img.reference === img.tag ? (body.images || []).map((i) => i.architecture) : null };
+}
+
 const normArch = (a) => ({ x86_64: "amd64", aarch64: "arm64", arm64v8: "arm64" }[a] || a);
 
 // -> {ok, missing: [detail], transient: [detail]}. missing = definitely not pullable; transient = registry
@@ -108,7 +126,16 @@ export async function checkImages(composeText, architectures = [], { fetcher = f
     try {
       // Docker Hub counts manifest GETs against pull limits; HEAD proves existence for free.
       const hub = img.registry === "docker.io";
-      const res = await registryRequest(fetcher, img, `manifests/${img.reference}`, hub ? "HEAD" : "GET", tokens);
+      let res = await registryRequest(fetcher, img, `manifests/${img.reference}`, hub ? "HEAD" : "GET", tokens);
+      if (hub && res.status !== 200) {
+        const fb = await hubFallback(fetcher, img).catch(() => ({ status: 0 }));
+        if (fb.status === 200 || fb.status === 404) res = { status: fb.status, headers: H0 };
+        if (fb.archs && want.length) {
+          const have = new Set(fb.archs.map(normArch));
+          const lack = want.filter((a) => !have.has(a));
+          if (lack.length) { missing.push(`${image}: no ${lack.join(", ")} build (supported_architectures promises it)`); continue; }
+        }
+      }
       if (res.status === 404 || res.status === 401 || res.status === 403) { missing.push(`${image}: not published or not public`); continue; }
       if (res.status === 429 || res.status >= 500 || !res.status) { transient.push(`${image}: registry answered ${res.status}`); continue; }
       if (res.status !== 200) { missing.push(`${image}: registry answered ${res.status}`); continue; }

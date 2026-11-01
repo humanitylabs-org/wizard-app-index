@@ -26,7 +26,7 @@ const INDEX = "application/vnd.oci.image.index.v1+json";
 const multi = (...archs) => ({ type: INDEX, body: { manifests: archs.map((a) => ({ platform: { os: "linux", architecture: a } })) } });
 
 test("parseImage normalises docker references", () => {
-  assert.deepEqual(parseImage("nginx"), { registry: "docker.io", host: "registry-1.docker.io", repository: "library/nginx", reference: "latest" });
+  assert.deepEqual(parseImage("nginx"), { registry: "docker.io", host: "registry-1.docker.io", repository: "library/nginx", reference: "latest", tag: "latest" });
   assert.equal(parseImage("ghcr.io/o/a:1.2").repository, "o/a");
   assert.equal(parseImage("ghcr.io/o/a:1.2").reference, "1.2");
   assert.equal(parseImage("localhost:5000/a:b").registry, "localhost:5000");
@@ -75,6 +75,23 @@ test("Docker Hub is checked with HEAD only (no pull-limit cost)", async () => {
   const { fetcher, calls } = registry({ "registry-1.docker.io/library/nginx:1": multi("amd64") });
   assert.equal((await checkImages(compose("nginx:1"), ["arm64"], { fetcher })).ok, true);
   assert.ok(calls.filter(([, u]) => u.includes("/manifests/")).every(([m]) => m === "HEAD"));
+});
+
+test("Docker Hub 429 falls back to the Hub web API (shared Worker IPs hit pull limits)", async () => {
+  const seen = [];
+  const fetcher = async (url) => {
+    seen.push(url);
+    if (url.startsWith("https://registry-1.docker.io/")) return res(429);
+    if (url === "https://hub.docker.com/v2/repositories/library/python/tags/3.12-alpine") return res(200, { images: [{ architecture: "amd64" }, { architecture: "arm64" }] });
+    if (url === "https://hub.docker.com/v2/repositories/library/python") return res(200, {});
+    return res(404);
+  };
+  const digest = "sha256:" + "b".repeat(64);
+  assert.equal((await checkImages(compose("python:3.12-alpine"), ["amd64", "arm64"], { fetcher })).ok, true);
+  assert.equal((await checkImages(compose(`python:old-tag@${digest}`), ["arm64"], { fetcher })).ok, true);   // moved tag, digest stays
+  assert.match((await checkImages(compose("python:nope"), [], { fetcher })).missing[0], /not published/);
+  assert.match((await checkImages(compose("nobody/none:1"), [], { fetcher })).missing[0], /not published/);
+  assert.equal((await checkImages(compose("python:3.12-alpine"), ["riscv64"], { fetcher })).missing.length, 1);
 });
 
 test("keepListing: a pending new commit never replaces or delists the installable one", () => {
