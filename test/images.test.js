@@ -71,10 +71,13 @@ test("registry outage is transient, never missing", async () => {
   assert.deepEqual([down.missing.length, down.transient.length], [0, 1]);
 });
 
-test("Docker Hub is checked with HEAD only (no pull-limit cost)", async () => {
-  const { fetcher, calls } = registry({ "registry-1.docker.io/library/nginx:1": multi("amd64") });
-  assert.equal((await checkImages(compose("nginx:1"), ["arm64"], { fetcher })).ok, true);
-  assert.ok(calls.filter(([, u]) => u.includes("/manifests/")).every(([m]) => m === "HEAD"));
+test("Docker Hub images are read from mirror.gcr.io; Hub itself only by HEAD", async () => {
+  const { fetcher, calls } = registry({ "mirror.gcr.io/library/nginx:1": multi("amd64"), "registry-1.docker.io/library/redis:7": multi("amd64") });
+  assert.equal((await checkImages(compose("nginx:1"), ["amd64"], { fetcher })).ok, true);
+  assert.match((await checkImages(compose("nginx:1"), ["arm64"], { fetcher })).missing[0], /no arm64/);
+  assert.ok(!calls.some(([, u]) => u.includes("registry-1.docker.io")));
+  assert.equal((await checkImages(compose("redis:7"), [], { fetcher })).ok, true);   // mirror miss, Hub HEAD hit
+  assert.ok(calls.filter(([, u]) => u.startsWith("https://registry-1.docker.io/v2/")).every(([m]) => m === "HEAD"));
 });
 
 test("Docker Hub 429 falls back to the Hub web API (shared Worker IPs hit pull limits)", async () => {
