@@ -124,22 +124,34 @@ export async function checkImages(composeText, architectures = [], { fetcher = f
     const img = parseImage(image);
     if (!img) { missing.push(`${service}: ${image} is not a valid image reference`); continue; }
     try {
-      // Docker Hub counts manifest GETs against pull limits; HEAD proves existence for free.
+      // Docker Hub rate-limits anonymous calls per IP and Worker egress IPs are shared, so ask Google's
+      // pull-through Docker Hub mirror first; it serves the same manifests without Hub's limits.
       const hub = img.registry === "docker.io";
-      let res = await registryRequest(fetcher, img, `manifests/${img.reference}`, hub ? "HEAD" : "GET", tokens);
+      const probe = hub ? { ...img, host: "mirror.gcr.io" } : img;
+      let res = await registryRequest(fetcher, probe, `manifests/${img.reference}`, "GET", tokens);
+      let archsOnly = null;
       if (hub && res.status !== 200) {
-        const fb = await hubFallback(fetcher, img).catch(() => ({ status: 0 }));
-        if (fb.status === 200 || fb.status === 404) res = { status: fb.status, headers: H0 };
-        if (fb.archs && want.length) {
-          const have = new Set(fb.archs.map(normArch));
-          const lack = want.filter((a) => !have.has(a));
-          if (lack.length) { missing.push(`${image}: no ${lack.join(", ")} build (supported_architectures promises it)`); continue; }
+        // Mirror miss: Hub itself (HEAD is free of pull quota), then Hub's web API. Inconclusive is transient.
+        const head = await registryRequest(fetcher, img, `manifests/${img.reference}`, "HEAD", tokens).catch(() => ({ status: 0 }));
+        if (head.status === 200) res = { status: 200, headers: H0 };
+        else {
+          const fb = await hubFallback(fetcher, img).catch(() => ({ status: 0 }));
+          // The mirror missed and Hub's own API says no such tag/repository: that is authoritative.
+          res = fb.status === 200 ? { status: 200, headers: H0 } : fb.status === 404 ? { status: 404 } : { status: head.status === 429 || fb.status === 429 ? 429 : 0 };
+          archsOnly = fb.archs || null;
         }
+        if (res.status === 200 && !archsOnly) { if (want.length) continue; }
       }
       if (res.status === 404 || res.status === 401 || res.status === 403) { missing.push(`${image}: not published or not public`); continue; }
-      if (res.status === 429 || res.status >= 500 || !res.status) { transient.push(`${image}: registry answered ${res.status}`); continue; }
+      if (res.status === 429 || res.status >= 500 || !res.status) { transient.push(`${image}: registry answered ${res.status || "nothing"}`); continue; }
       if (res.status !== 200) { missing.push(`${image}: registry answered ${res.status}`); continue; }
-      if (hub || !want.length) continue;
+      if (archsOnly) {
+        const have = new Set(archsOnly.map(normArch));
+        const lack = want.filter((a) => !have.has(a));
+        if (lack.length) missing.push(`${image}: no ${lack.join(", ")} build (supported_architectures promises it)`);
+        continue;
+      }
+      if (!want.length || res.headers === H0) continue;
       const type = (res.headers.get("content-type") || "").split(";")[0].trim();
       const body = await res.json().catch(() => null);
       if (!body) { transient.push(`${image}: unreadable manifest`); continue; }
@@ -149,7 +161,7 @@ export async function checkImages(composeText, architectures = [], { fetcher = f
       } else {
         const digest = body.config?.digest;
         if (!digest) { transient.push(`${image}: manifest has no config`); continue; }
-        const cfg = await registryRequest(fetcher, img, `blobs/${digest}`, "GET", tokens);
+        const cfg = await registryRequest(fetcher, probe, `blobs/${digest}`, "GET", tokens);
         if (cfg.status !== 200) { transient.push(`${image}: config blob answered ${cfg.status}`); continue; }
         have = new Set([normArch((await cfg.json().catch(() => ({}))).architecture)]);
       }
