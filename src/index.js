@@ -39,6 +39,10 @@ const parseJSON = (s, d) => {
 };
 
 function row2app(r, full = false) {
+  // Search must retain screen presence without exposing view source/build metadata.
+  // Derive from the cached, checked manifest: no schema migration or re-publish needed.
+  const viewPath = parseJSON(r.manifest, {})?.view?.path;
+  const hasView = typeof viewPath === 'string' && viewPath.startsWith('/') && !viewPath.startsWith('//') && !/[\x00-\x20\x7f\\]/.test(viewPath);
   const a = {
     repo: `${r.owner}/${r.repo}`,
     publisher: r.owner,
@@ -47,6 +51,7 @@ function row2app(r, full = false) {
     name: r.name,
     summary: r.summary,
     type: r.type,
+    has_view: hasView,
     category: r.category,
     version: r.version,
     logo: r.logo ? `https://raw.githubusercontent.com/${r.owner}/${r.repo}/${r.commit_sha}/${r.logo}` : null,
