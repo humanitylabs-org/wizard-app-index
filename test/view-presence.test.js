@@ -13,8 +13,8 @@ test('search exposes only view presence from cached pinned manifest, not source/
  assert.equal(a.has_view,true);assert.equal(a.type,'service');assert.equal(a.category,'app');
  assert.ok(!JSON.stringify(a).includes('DO_NOT_EXPOSE'));assert.equal(a.manifest,undefined);
 });
-test('screenless or malformed views are not user-facing',async()=>{
- for(const view of [undefined,null,{},false,{path:''},{path:'//outside'},{path:'/\n'},'javascript:bad']) {
+test('only declared valid view paths establish presence',async()=>{
+ for(const view of [undefined,null,{},false,{path:''},{path:'//outside'},{path:'/\n'},{path:'/\\outside'},'javascript:bad']) {
   assert.equal((await query({view})).has_view,false,JSON.stringify(view));
  }
 });
