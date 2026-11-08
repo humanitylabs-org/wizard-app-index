@@ -98,7 +98,7 @@ export function storePage(apps) {
 <meta name="theme-color" content="#05030c">
 <meta name="color-scheme" content="dark">
 <title>Wizard Apps | AI Wizards</title>
-<meta name="description" content="Apps for your Wizard: a private AI server you own, with an AI agent that uses these apps for you. Install Wizard OS with one command, then add apps.">
+<meta name="description" content="Apps for your Wizard: a private AI server you own, with an AI agent that uses these apps for you. Install WizardOS with one command, then add apps.">
 <style>
 :root{--bg:#05030c;--ink:#f3efff;--ink-2:#b9b0d8;--ink-3:#7d74a3;--line:rgba(205,190,255,.13);--line-2:rgba(205,190,255,.24);
 --glass:rgba(18,12,38,.58);--glass-2:rgba(28,19,58,.72);--violet:#8f63ff;--violet-2:#b99bff;--pink:#ff5ccf;--cyan:#3fe0ff;--green:#4ff0b0;
@@ -236,7 +236,7 @@ button.pill:hover{border-color:var(--line-2);color:var(--ink)}
   <section class="hero">
     <h1>Wizard Apps</h1>
     <p>A Wizard is your own private AI server: an AI agent running on a machine you control. These are the apps it can use, from video editing to files and transcription. All open source.</p>
-    <span class="lbl" id="os-l">Install Wizard OS</span>
+    <span class="lbl" id="os-l">Install WizardOS</span>
     <div class="cmd" role="group" aria-labelledby="os-l"><code>${esc(INSTALL)}</code><button class="copy" type="button" data-copy="${esc(INSTALL)}">Copy</button></div>
   </section>
   <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
@@ -253,7 +253,7 @@ button.pill:hover{border-color:var(--line-2);color:var(--ink)}
     <h3 id="how-h">How it works</h3>
     <ol>
       <li><b>Get a server.</b> Any Ubuntu server or VPS. It stays on, so your agent can work while you're away.</li>
-      <li><b>Install Wizard OS.</b> Run the install command at the top of this page as root. It sets up the AI agent and the system apps, and keeps everything private to the server.</li>
+      <li><b>Install WizardOS.</b> Run the install command at the top of this page as root. It sets up the AI agent and the system apps, and keeps everything private to the server.</li>
       <li><b>Talk to your agent.</b> Ask it to do things. It installs and uses apps from this page, or you can add them yourself.</li>
     </ol>
     <h3>Build an app</h3>

@@ -6,7 +6,7 @@ The companion is a free early-access app, labelled **Wizard** on the phone, for 
 
 ## 1. Find the owner's Wizard
 
-Wizard OS must already be installed. If it is not, follow https://aiwizards.com/os.md first, then come back.
+WizardOS must already be installed. If it is not, follow https://aiwizards.com/os.md first, then come back.
 
 Run this read-only status check. It changes nothing:
 
@@ -105,5 +105,5 @@ To remove it, the owner sends or saves any recordings still waiting in the app, 
 
 - Never use a different download, server or Wizard than the owner's own.
 - Never bypass HTTPS or certificate checks, or make the Wizard public.
-- Never edit the owner's server, Wizard OS or Hermes as part of this setup.
+- Never edit the owner's server, WizardOS or Hermes as part of this setup.
 - Never improvise fixes. If a step fails, tell the owner what happened and stop.

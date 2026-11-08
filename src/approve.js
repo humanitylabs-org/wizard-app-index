@@ -191,12 +191,12 @@ export const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>Approve your Wizard OS install</title>
+<meta name="referrer" content="no-referrer"><title>Approve your WizardOS install</title>
 <link rel="stylesheet" href="/os-approve/app.css"></head><body><main>
-<h1>Approve your Wizard OS install</h1>
+<h1>Approve your WizardOS install</h1>
 <p id="lead">Checking this link…</p>
 <div id="box" hidden>
-<p>Your agent is installing Wizard OS on your server <b id="host"></b> for the account <b id="user"></b>. A few one-time
+<p>Your agent is installing WizardOS on your server <b id="host"></b> for the account <b id="user"></b>. A few one-time
 setup steps need administrator rights: <span id="needs"></span>.</p>
 <p>Enter the password of <b id="user2"></b> on that server (the one <code>sudo</code> asks for). It is encrypted
 right here in your browser to a key only that server holds, used once for this setup, and never saved. Your agent
