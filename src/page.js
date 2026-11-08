@@ -38,15 +38,22 @@ function row(a) {
 <span class="ic${headless(a) ? " headless" : ""}">${icon(a)}</span><span class="nm">${esc(a.name)}<small>${esc(a.summary)}</small></span></button>`;
 }
 
+// `uses` names an app id or a capability another app `provides` (wizard-ux uses `agent-service`, which
+// `wizard-agent-service` provides). An id match wins; otherwise the first provider, so the chain below resolves.
+function resolver(apps) {
+  const byId = Object.fromEntries(apps.map((a) => [a.id, a]));
+  return (self, u) => byId[u] || apps.find((x) => x !== self && (x.provides || []).includes(u));
+}
+
 // Which listed app an interface belongs next to: a direct agent/app it uses, else the agent at the end
 // of its `uses` chain (interface -> service -> agent, max 4 hops), else any listed non-interface it uses.
-function hostFor(a, byId) {
-  const direct = (a.uses || []).map((u) => byId[u]).filter((x) => x && x.category !== "interface");
+function hostFor(a, find) {
+  const direct = (a.uses || []).map((u) => find(a, u)).filter((x) => x && x.category !== "interface");
   const main = direct.find((x) => x.category === "agent" || x.category === "app");
   if (main) return main.id;
   let cur = a;
   for (let i = 0; i < 4 && cur; i++) {
-    const next = (cur.uses || []).map((u) => byId[u]).find(Boolean);
+    const next = (cur.uses || []).map((u) => find(cur, u)).find(Boolean);
     if (!next) break;
     if (next.category === "agent") return next.id;
     cur = next;
@@ -55,17 +62,17 @@ function hostFor(a, byId) {
 }
 
 export function storePage(apps) {
-  const byId = Object.fromEntries(apps.map((a) => [a.id, a]));
+  const find = resolver(apps);
   const by = Object.fromEntries(GROUPS.map(([k]) => [k, []]));
   const ifacesOf = {};
   for (const a of apps) {
     if (a.category === "interface") {
-      const h = hostFor(a, byId);
+      const h = hostFor(a, find);
       if (h) {
         (ifacesOf[h] ||= []).push(a);
         continue;
       }
-      by.app.push(a);
+      by.system.push(a); // an interface with no host is infrastructure, never an end-user app
     } else (by[a.category] || by.app).push(a);
   }
   const groups = GROUPS.filter(([k]) => by[k].length)
