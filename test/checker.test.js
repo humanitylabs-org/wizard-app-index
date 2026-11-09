@@ -42,6 +42,20 @@ test("spoken launch names have bounded strict validation", async () => {
   }
 });
 
+test("whats_new is optional and one line of 1-140 characters", async () => {
+  const plain = await check(memReader(base));
+  assert.ok(!plain.results.some(r => r.rule.includes("whats_new")), "absent adds no rule");
+  for (const v of ["Replies stay in their thread.", "x".repeat(140), "😀".repeat(140)]) {
+    const files = {...base, "wizard.md": base["wizard.md"].replace("id: hello", "id: hello\nwhats_new: " + JSON.stringify(v))};
+    const r = await check(memReader(files));
+    assert.ok(passed(r.results), failures(r.results).join("; "));
+  }
+  for (const v of [null, "", " ", "x".repeat(141), "a\nb", "a\tb", 3, ["a"], {}]) {
+    const files = {...base, "wizard.md": base["wizard.md"].replace("id: hello", "id: hello\nwhats_new: " + JSON.stringify(v))};
+    assert.match(failures((await check(memReader(files))).results).join(), /whats_new is one line/);
+  }
+});
+
 test("needs accepts WAM capabilities and app IDs, not aliases or self declarations", async () => {
   for (const [need, accepted] of [
     ["speech-to-text-engine", true], ["connection-router", true], ["wizard-voice-service", true],

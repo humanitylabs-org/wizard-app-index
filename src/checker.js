@@ -206,6 +206,12 @@ export async function check(read) {
       typeof n === "string" && n.trim().length > 0 && [...n].length <= 40 && !/[\x00-\x1f\x7f]/.test(n)),
       "at most 8 nonblank strings, each at most 40 characters, without controls");
   }
+  if (Object.hasOwn(d, "whats_new")) {
+    // Optional (spec rule 8d, wizard-ux#1191): one line on what changed in this version, for Settings > Updates.
+    const wn = d.whats_new;
+    rule("whats_new is one line of 1-140 chars", typeof wn === "string" && wn.trim().length > 0 && [...wn].length <= 140 && !/[\x00-\x1f\x7f]/.test(wn),
+      "one line of 1-140 characters, without line breaks or controls");
+  }
   rule("spec version known", SPECS.has(Number(d.wizard)) && typeof d.wizard === "number", d.wizard);
   rule("id valid", ID.test(String(d.id ?? "")), d.id);
   rule("id is the app's name", idIsName(d.id, d.name) || LEGACY_IDS.has(String(d.id)),
