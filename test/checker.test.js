@@ -56,6 +56,19 @@ test("whats_new is optional and one line of 1-140 characters", async () => {
   }
 });
 
+test("permissions is optional and only geolocation (wizard-os#731)", async () => {
+  const plain = await check(memReader(base));
+  assert.ok(!plain.results.some(r => r.rule.includes("permission")), "absent adds no rule");
+  const withLine = (v) => ({...base, "wizard.md": base["wizard.md"].replace("id: hello", "id: hello\npermissions: " + JSON.stringify(v))});
+  for (const v of [["geolocation"], []]) {
+    const r = await check(memReader(withLine(v)));
+    assert.ok(passed(r.results), failures(r.results).join("; "));
+  }
+  for (const v of [["camera"], ["geolocation", "microphone"], ["Geolocation"], "geolocation", ["geolocation", "geolocation"], null, {}, [1]]) {
+    assert.match(failures((await check(memReader(withLine(v)))).results).join(), /permissions are known/, JSON.stringify(v));
+  }
+});
+
 test("needs accepts WAM capabilities and app IDs, not aliases or self declarations", async () => {
   for (const [need, accepted] of [
     ["speech-to-text-engine", true], ["connection-router", true], ["wizard-voice-service", true],

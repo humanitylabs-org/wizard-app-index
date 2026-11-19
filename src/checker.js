@@ -21,6 +21,8 @@ export const CATEGORIES = new Set(["agent", "interface", "app", "system"]);
 export const TAGS = new Set(["video", "audio", "photos", "writing", "research", "finance", "productivity", "communication", "developer", "automation", "security", "data", "home", "learning"]);
 export const MAX_TAGS = 3;
 export const NEEDS = new Set(["mic", "system-audio", "camera", "notifications", "files", "home-network"]);
+// Browser permissions an app frame may ask the owner for (wizard-os spec/WIZARD_MD.md "Browser permissions").
+export const PERMISSIONS = new Set(["geolocation"]);
 const SPECS = new Set([0.1, 0.2]);
 const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
 // The app id is the app's name in kebab-case (Connected accounts -> connected-accounts), optionally "wizard-"
@@ -211,6 +213,12 @@ export async function check(read) {
     const wn = d.whats_new;
     rule("whats_new is one line of 1-140 chars", typeof wn === "string" && wn.trim().length > 0 && [...wn].length <= 140 && !/[\x00-\x1f\x7f]/.test(wn),
       "one line of 1-140 characters, without line breaks or controls");
+  }
+  if (Object.hasOwn(d, "permissions")) {
+    // Optional (spec rule 8e, wizard-os#731): distinct values from PERMISSIONS; absent or [] means none.
+    const pm = d.permissions;
+    rule("permissions are known (geolocation)", Array.isArray(pm) && pm.every((v) => typeof v === "string" && PERMISSIONS.has(v)) && new Set(pm).size === pm.length,
+      JSON.stringify(pm));
   }
   rule("spec version known", SPECS.has(Number(d.wizard)) && typeof d.wizard === "number", d.wizard);
   rule("id valid", ID.test(String(d.id ?? "")), d.id);
