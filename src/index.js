@@ -87,6 +87,16 @@ export const delistStmts = (env, key, failures, t) => [
   env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(key),
 ];
 
+// Another listed repo publishing the same app id is re-checked soon (wizard-app-manager#829): a repo moved on GitHub
+// keeps its old listing until the weekly recheck, so the Store shows the app twice and boxes see two candidates.
+// The recheck delists the old name ("renamed to ...") when GitHub redirects it; a real second publisher stays.
+// Only rows not checked in the last hour, so two forks of one id never re-queue each other in a loop.
+export const SIBLING_RECHECK_AFTER = 3600;
+export const siblingRecheckStmt = (env, key, appId, t) =>
+  env.DB.prepare(
+    "INSERT OR IGNORE INTO queue (key, full, reason, added_at) SELECT key, owner || '/' || repo, 'recheck', ? FROM apps WHERE listed = 1 AND app_id = ? AND key != ? AND checked_at < ?"
+  ).bind(t, appId, key, t - SIBLING_RECHECK_AFTER);
+
 export async function indexRepo(env, r, { via, ref, renamed, pendingSince } = {}) {
   if (!renamed) {
     const to = await currentName(r);
@@ -162,7 +172,8 @@ export async function indexRepo(env, r, { via, ref, renamed, pendingSince } = {}
     ...provides.map((p) => env.DB.prepare("INSERT OR IGNORE INTO app_slots (key, slot) VALUES (?, ?)").bind(r.key, p)),
     env.DB.prepare("DELETE FROM app_tags WHERE key = ?").bind(r.key),
     ...tags.map((g) => env.DB.prepare("INSERT OR IGNORE INTO app_tags (key, tag) VALUES (?, ?)").bind(r.key, g)),
-    env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(r.key)
+    env.DB.prepare("DELETE FROM queue WHERE key = ?").bind(r.key),
+    siblingRecheckStmt(env, r.key, String(d.id), t)
   );
   await env.DB.batch(stmts);
   return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: true, id: d.id, version: String(d.version), failures: [] };

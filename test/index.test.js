@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { buildSearch, installHash, tagsOf, indexRepo } from "../src/index.js";
+import { buildSearch, installHash, tagsOf, indexRepo, siblingRecheckStmt } from "../src/index.js";
 import { currentName, parseRepo } from "../src/github.js";
 
 const P = (s) => new URLSearchParams(s);
@@ -81,4 +81,24 @@ test("indexRepo: a renamed repo delists its old name and indexes the current one
   } finally {
     globalThis.fetch = real;
   }
+});
+
+test("siblingRecheckStmt queues the other listed repos of the same app id, once an hour at most (#829)", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync } = await import("node:fs");
+  const db = new DatabaseSync(":memory:");
+  for (const f of ["0001_init.sql", "0002_category.sql", "0003_tags_installs.sql", "0004_os_approvals.sql"]) db.exec(readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8"));
+  const env = { DB: { prepare: (sql) => ({ bind: (...b) => ({ run: () => db.prepare(sql).run(...b) }) }) } };
+  const add = (owner, repo, id, checked, listed = 1) =>
+    db.prepare("INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, app_id, name, summary, type, version, manifest, found_via, first_seen, checked_at, listed) VALUES (?, 'github', ?, ?, ?, 'x', ?, ?, 's', 'app', '1', '{}', 'crawl', 0, ?, ?)")
+      .run(`github:${owner}/${repo}`.toLowerCase(), owner, repo, `https://github.com/${owner}/${repo}`, id, id, checked, listed);
+  const t = 2_000_000;
+  add("humanitylabs-org", "photos", "photos", t);
+  add("oscarhenrycollins", "photos", "photos", t - 3 * 86400);   // moved; its listing is days old
+  add("someone", "photos", "photos", t - 60);                   // a second publisher checked a minute ago
+  add("old", "photos", "photos", t - 9 * 86400, 0);             // already delisted
+  add("oscarhenrycollins", "mail", "mail", t - 9 * 86400);       // another app
+  siblingRecheckStmt(env, "github:humanitylabs-org/photos", "photos", t).run();
+  const q = db.prepare("SELECT key, full, reason, added_at FROM queue ORDER BY key").all().map((r) => ({ ...r }));
+  assert.deepEqual(q, [{ key: "github:oscarhenrycollins/photos", full: "oscarhenrycollins/photos", reason: "recheck", added_at: t }]);
 });
