@@ -59,6 +59,9 @@ export function body(text) {
   return text.replace(/\r\n/g, "\n").replace(/^---\n[\s\S]*?\n---\n/, "").trim();
 }
 
+// Per-argument limit with headroom under Linux's 128 KiB MAX_ARG_STRLEN.
+export const MAX_ARG_BYTES = 120000;
+
 // Things a public, unreviewed app must never ask for. The host is the owner's whole Wizard.
 export function composeRisks(composeText) {
   const risks = [];
@@ -84,6 +87,18 @@ export function composeRisks(composeText) {
       if (/docker\.sock|containerd\.sock|podman\.sock/.test(src)) risks.push(`${name}: mounts the container runtime socket`);
       else if (src === "/" || /^\/(etc|root|boot|proc|sys|dev|var\/run|run|home|usr|lib|bin|sbin)(\/|$)/.test(src)) risks.push(`${name}: mounts host path ${src}`);
     }
+    // Linux refuses any single argument or env string over 128 KiB (MAX_ARG_STRLEN): the container never starts.
+    const big = (what, v) => {
+      if (v == null || typeof v === "object") return;
+      const n = new TextEncoder().encode(String(v)).length;
+      if (n > MAX_ARG_BYTES) risks.push(`${name} ${what} argument is ${Math.round(n / 1000)} KB; Linux refuses over 128 KiB, the app would never start`);
+    };
+    for (const k of ["command", "entrypoint"]) {
+      for (const v of Array.isArray(s[k]) ? s[k] : [s[k]]) big(k, v);
+    }
+    const env = s.environment;
+    if (Array.isArray(env)) for (const v of env) big("environment", v);
+    else if (env && typeof env === "object") for (const [k, v] of Object.entries(env)) big("environment", v == null ? null : `${k}=${v}`);
   }
   return risks;
 }

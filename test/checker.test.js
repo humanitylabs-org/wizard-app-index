@@ -119,6 +119,25 @@ test("host-level container access is refused", async () => {
   assert.deepEqual(composeRisks("services:\n  f:\n    cap_add: [CHOWN, SETUID, SETGID]\n    volumes: ['${ROOT_FOLDER_HOST}/media:/srv', '${APP_DATA_DIR}/data:/data']\n"), []);
 });
 
+test("an argument over 120 KB is refused, since no box can start it", async () => {
+  const huge = "x".repeat(130000);
+  for (const bad of [
+    `services:\n  app:\n    command: ["python", "-c", "${huge}"]\n`,
+    `services:\n  app:\n    entrypoint: "${huge}"\n`,
+    `services:\n  app:\n    environment:\n      BLOB: "${huge}"\n`,
+    `services:\n  app:\n    environment: ["BLOB=${huge}"]\n`,
+  ]) {
+    const risks = composeRisks(bad);
+    assert.equal(risks.length, 1, bad.slice(0, 60));
+    assert.match(risks[0], /^app (command|entrypoint|environment) argument is 130 KB; Linux refuses over 128 KiB/);
+  }
+  const r = await check(memReader({ ...base, "runtipi/docker-compose.yml": `services:\n  app:\n    command: ["python", "-c", "${huge}"]\n` }));
+  assert.ok(!passed(r.results));
+  // Multibyte text counts in UTF-8 bytes, and ordinary sizes stay allowed.
+  assert.equal(composeRisks(`services:\n  app:\n    command: ["${"é".repeat(61000)}"]\n`).length, 1);
+  assert.deepEqual(composeRisks(`services:\n  app:\n    command: ["python", "-c", "${"x".repeat(100000)}"]\n    environment: {A: 1, B: null}\n`), []);
+});
+
 test("path traversal is never read", async () => {
   assert.equal(safePath("../etc/passwd"), null);
   assert.equal(safePath("/etc/passwd"), null);
