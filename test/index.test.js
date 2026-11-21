@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { buildSearch, installHash, tagsOf, indexRepo, siblingRecheckStmt } from "../src/index.js";
+import { buildSearch, installHash, tagsOf, indexRepo, siblingRecheckStmt, delistMovedSiblings, sweepMoved, movedTo, MOVED_SWEEP } from "../src/index.js";
 import { currentName, parseRepo } from "../src/github.js";
 
 const P = (s) => new URLSearchParams(s);
@@ -101,4 +101,85 @@ test("siblingRecheckStmt queues the other listed repos of the same app id, once 
   siblingRecheckStmt(env, "github:humanitylabs-org/photos", "photos", t).run();
   const q = db.prepare("SELECT key, full, reason, added_at FROM queue ORDER BY key").all().map((r) => ({ ...r }));
   assert.deepEqual(q, [{ key: "github:oscarhenrycollins/photos", full: "oscarhenrycollins/photos", reason: "recheck", added_at: t }]);
+});
+
+// A D1-like env over node:sqlite with the real migrations (#32).
+async function sqliteEnv() {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const db = new DatabaseSync(":memory:");
+  for (const f of readdirSync(new URL("../migrations/", import.meta.url)).filter((f) => f.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8"));
+  const stmt = (sql, b = []) => ({ bind: (...x) => stmt(sql, x), run: () => db.prepare(sql).run(...b), first: () => db.prepare(sql).get(...b) ?? null, all: () => ({ results: db.prepare(sql).all(...b) }) });
+  const env = { DB: { prepare: (sql) => stmt(sql), batch: async (list) => list.map((s) => s.run()) } };
+  const add = (owner, repo, id, checked, listed = 1) => {
+    const key = `github:${owner}/${repo}`.toLowerCase();
+    db.prepare("INSERT INTO apps (key, host, owner, repo, repo_url, commit_sha, app_id, name, summary, type, version, manifest, found_via, first_seen, checked_at, listed) VALUES (?, 'github', ?, ?, ?, 'x', ?, ?, 's', 'app', '1', '{}', 'crawl', 0, ?, ?)")
+      .run(key, owner, repo, `https://github.com/${owner}/${repo}`, id, id, checked, listed);
+    db.prepare("INSERT INTO apps_fts (key, name, summary, body, provides, owner) VALUES (?, ?, 's', '', '', ?)").run(key, id, owner);
+  };
+  return { db, env, add };
+}
+const redirects = (map) => async (url, opts) => {
+  assert.equal(opts?.method, "HEAD");
+  const loc = map[url];
+  return { status: loc ? 301 : 200, headers: { get: (h) => (h === "location" ? loc ?? null : null) } };
+};
+
+test("delistMovedSiblings: a listed repo whose GitHub name redirects to the checked one is delisted at once (#32)", async () => {
+  const { db, env, add } = await sqliteEnv();
+  const t = 2_000_000;
+  add("humanitylabs-org", "photos", "photos", t);
+  add("oscarhenrycollins", "photos", "photos", t - 60);           // moved, checked only a minute ago: no waiting
+  add("someone", "photos", "photos", t - 9 * 86400);             // a real second publisher: no redirect
+  add("elsewhere", "photos", "photos", t - 9 * 86400);           // redirects, but to another repo: its own recheck handles it
+  add("oscarhenrycollins", "mail", "mail", t - 9 * 86400);        // another app
+  const real = globalThis.fetch;
+  globalThis.fetch = redirects({ "https://github.com/oscarhenrycollins/photos": "https://github.com/humanitylabs-org/photos",
+    "https://github.com/elsewhere/photos": "https://github.com/x/photos", "https://github.com/oscarhenrycollins/mail": "https://github.com/humanitylabs-org/photos" });
+  try {
+    const moved = await delistMovedSiblings(env, parseRepo("humanitylabs-org/photos"), "photos", t);
+    assert.deepEqual(moved, ["oscarhenrycollins/photos"]);
+  } finally {
+    globalThis.fetch = real;
+  }
+  const listed = db.prepare("SELECT key FROM apps WHERE listed = 1 ORDER BY key").all().map((r) => r.key);
+  assert.deepEqual(listed, ["github:elsewhere/photos", "github:humanitylabs-org/photos", "github:oscarhenrycollins/mail", "github:someone/photos"]);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM apps_fts WHERE key = 'github:oscarhenrycollins/photos'").get().n, 0);
+  const chk = db.prepare("SELECT ok, failures FROM checks WHERE key = 'github:oscarhenrycollins/photos'").get();
+  assert.equal(chk.ok, 0);
+  assert.equal(movedTo(JSON.parse(chk.failures)), "humanitylabs-org/photos");
+});
+
+test("sweepMoved: one pass over all listings delists redirecting keys, queues the new name, then stays done (#32)", async () => {
+  const { db, env, add } = await sqliteEnv();
+  const t = 2_000_000;
+  for (let i = 0; i < 12; i++) add("o", `app${String(i).padStart(2, "0")}`, `app${i}`, t);
+  add("oscarhenrycollins", "sovereignty", "sovereignty", t);
+  add("zz", "gone", "gone", t, 0);   // already delisted: not probed
+  const real = globalThis.fetch;
+  const probed = [];
+  const inner = redirects({ "https://github.com/oscarhenrycollins/sovereignty": "https://github.com/humanitylabs-org/sovereignty" });
+  globalThis.fetch = async (url, opts) => { probed.push(url); return inner(url, opts); };
+  try {
+    let r = await sweepMoved(env, undefined, t);
+    assert.equal(r.cursor, "github:o/app09");
+    assert.deepEqual(r.moved, []);
+    r = await sweepMoved(env, r.cursor, t);
+    assert.equal(r.cursor, "done");
+    assert.deepEqual(r.moved, ["oscarhenrycollins/sovereignty"]);
+    assert.equal(probed.length, 13);
+    assert.deepEqual(await sweepMoved(env, "done", t), { cursor: "done", moved: [] });
+    assert.equal(probed.length, 13);
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(db.prepare("SELECT value FROM crawl_state WHERE name = ?").get(MOVED_SWEEP).value, "done");
+  assert.equal(db.prepare("SELECT listed FROM apps WHERE key = 'github:oscarhenrycollins/sovereignty'").get().listed, 0);
+  assert.deepEqual({ ...db.prepare("SELECT key, full, reason FROM queue").get() }, { key: "github:humanitylabs-org/sovereignty", full: "humanitylabs-org/sovereignty", reason: "recheck" });
+});
+
+test("movedTo reads where a renamed listing went; other failures say nothing", () => {
+  assert.equal(movedTo(["renamed to humanitylabs-org/photos"]), "humanitylabs-org/photos");
+  assert.equal(movedTo(["repo not found or not public"]), null);
+  assert.equal(movedTo(null), null);
 });
