@@ -97,6 +97,56 @@ export const siblingRecheckStmt = (env, key, appId, t) =>
     "INSERT OR IGNORE INTO queue (key, full, reason, added_at) SELECT key, owner || '/' || repo, 'recheck', ? FROM apps WHERE listed = 1 AND app_id = ? AND key != ? AND checked_at < ?"
   ).bind(t, appId, key, t - SIBLING_RECHECK_AFTER);
 
+// When a repo is checked and listed, any other listed repo with the same app id whose GitHub name now redirects to it
+// (a transfer or rename) is delisted right away (#32): waiting for the old name's own recheck let a box resolve the app
+// from the stale listing and downgrade (oscarhenrycollins/photos 0.2.0 over humanitylabs-org/photos 0.4.1).
+// One HEAD per sibling, no REST API; a real second publisher (no redirect, or a redirect elsewhere) stays listed.
+export const MAX_SIBLING_PROBES = 5;
+export async function delistMovedSiblings(env, r, appId, t) {
+  const { results } = await env.DB.prepare("SELECT key, owner, repo, repo_url FROM apps WHERE listed = 1 AND app_id = ? AND key != ? ORDER BY checked_at LIMIT ?")
+    .bind(appId, r.key, MAX_SIBLING_PROBES).all();
+  const moved = [];
+  for (const s of results || []) {
+    const to = await currentName({ owner: s.owner, repo: s.repo, key: s.key, url: s.repo_url || `https://github.com/${s.owner}/${s.repo}` });
+    if (to && to.key === r.key) moved.push(s);
+  }
+  if (moved.length) await env.DB.batch(moved.flatMap((s) => delistStmts(env, s.key, [`renamed to ${r.owner}/${r.repo}`], t)));
+  return moved.map((s) => `${s.owner}/${s.repo}`);
+}
+
+// One pass over every listed key (#32): a listing whose GitHub name redirects is delisted ("renamed to ...") and its
+// current name queued, without waiting for the weekly recheck. Runs a few keys per cron run, then stays done.
+export const MOVED_SWEEP = "moved_sweep:v1";
+export const MOVED_SWEEP_BATCH = 10;
+export async function sweepMoved(env, cursor, t) {
+  if (cursor === "done") return { cursor, moved: [] };
+  const { results } = await env.DB.prepare("SELECT key, owner, repo, repo_url FROM apps WHERE listed = 1 AND key > ? ORDER BY key LIMIT ?")
+    .bind(cursor || "", MOVED_SWEEP_BATCH).all();
+  const rows = results || [];
+  const stmts = [];
+  const moved = [];
+  for (const s of rows) {
+    const to = await currentName({ owner: s.owner, repo: s.repo, key: s.key, url: s.repo_url || `https://github.com/${s.owner}/${s.repo}` });
+    if (!to) continue;
+    moved.push(`${s.owner}/${s.repo}`);
+    stmts.push(...delistStmts(env, s.key, [`renamed to ${to.owner}/${to.repo}`], t),
+      env.DB.prepare("INSERT OR IGNORE INTO queue (key, full, reason, added_at) VALUES (?, ?, 'recheck', ?)").bind(to.key, `${to.owner}/${to.repo}`, t));
+  }
+  const next = rows.length < MOVED_SWEEP_BATCH ? "done" : rows[rows.length - 1].key;
+  stmts.push(env.DB.prepare("INSERT OR REPLACE INTO crawl_state (name, value) VALUES (?, ?)").bind(MOVED_SWEEP, next));
+  await env.DB.batch(stmts);
+  return { cursor: next, moved };
+}
+
+// "renamed to owner/repo" in a delisted key's last check -> where the repo went.
+export const movedTo = (failures) => {
+  for (const f of Array.isArray(failures) ? failures : []) {
+    const m = /^renamed to (\S+\/\S+)$/.exec(String(f));
+    if (m) return m[1];
+  }
+  return null;
+};
+
 export async function indexRepo(env, r, { via, ref, renamed, pendingSince } = {}) {
   if (!renamed) {
     const to = await currentName(r);
@@ -176,7 +226,9 @@ export async function indexRepo(env, r, { via, ref, renamed, pendingSince } = {}
     siblingRecheckStmt(env, r.key, String(d.id), t)
   );
   await env.DB.batch(stmts);
-  return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: true, id: d.id, version: String(d.version), failures: [] };
+  const movedHere = await delistMovedSiblings(env, r, String(d.id), t);
+  return { repo: `${r.owner}/${r.repo}`, commit: c.sha, listed: true, id: d.id, version: String(d.version), failures: [],
+    ...(movedHere.length ? { delisted_moved: movedHere } : {}) };
 }
 
 function ftsQuery(q) {
@@ -313,7 +365,8 @@ async function getApp(env, owner, repo) {
   const row = await env.DB.prepare(`SELECT a.*, ${WITH_INSTALLS} FROM apps a WHERE a.key = ?`).bind(r.key).first();
   const chk = await env.DB.prepare("SELECT commit_sha, ok, failures, checked_at FROM checks WHERE key = ?").bind(r.key).first();
   if (!row && !chk) return json({ error: "not indexed; POST /v1/publish to add it" }, 404);
-  return json({ ...(row ? row2app(row, true) : { repo: `${r.owner}/${r.repo}`, listed: false }), last_check: chk ? { commit: chk.commit_sha, ok: Boolean(chk.ok), failures: parseJSON(chk.failures, []), checked_at: chk.checked_at } : null });
+  const moved = chk && !chk.ok ? movedTo(parseJSON(chk.failures, [])) : null;
+  return json({ ...(row ? row2app(row, true) : { repo: `${r.owner}/${r.repo}`, listed: false }), ...(moved ? { moved_to: moved } : {}), last_check: chk ? { commit: chk.commit_sha, ok: Boolean(chk.ok), failures: parseJSON(chk.failures, []), checked_at: chk.checked_at } : null });
 }
 
 async function stats(env) {
@@ -397,6 +450,15 @@ async function crawl(env) {
   // 3) Stale listings get re-verified so deleted or broken repos drop out.
   const stale = await env.DB.prepare("SELECT owner, repo FROM apps WHERE listed = 1 AND checked_at < ? ORDER BY checked_at LIMIT 50").bind(t - RECHECK_AFTER).all();
   found += await enqueue(env, stale.results.map((x) => `${x.owner}/${x.repo}`), "recheck");
+  // 3b) One-time pass delisting listings whose GitHub name redirects (#32).
+  if (state[MOVED_SWEEP] !== "done") {
+    try {
+      const sw = await sweepMoved(env, state[MOVED_SWEEP], t);
+      if (sw.moved.length) console.log("moved sweep delisted", JSON.stringify(sw.moved));
+    } catch (e) {
+      console.log("moved sweep failed", String(e));
+    }
+  }
   writes.push(set("last_crawl", t), set("last_crawl_found", found));
   if (writes.length) await env.DB.batch(writes);
   // 4) Work the queue.
